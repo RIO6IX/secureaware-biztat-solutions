@@ -148,6 +148,11 @@ label {
   padding: 18px;
 }
 
+.panel {
+  margin-bottom: 18px;
+  overflow-x: auto;
+}
+
 .panel h2,
 .card h3 {
   margin: 0 0 14px;
@@ -182,6 +187,7 @@ label {
 table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 720px;
 }
 
 th,

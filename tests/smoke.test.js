@@ -16,7 +16,9 @@ test("policy dashboard exposes member 2 data", async () => {
   const base = `http://127.0.0.1:${server.address().port}`;
   const dashboard = await fetch(`${base}/api/dashboard`).then((response) => response.json());
   assert.ok(dashboard.policies >= 3);
-  const assigned = await fetch(`${base}/api/employee/policies?username=employee.demo`).then((response) => response.json());
+  const assigned = await fetch(`${base}/api/employee/policies?username=finance.analyst01`).then((response) => response.json());
   assert.ok(assigned.assignedPolicies.length >= 1);
+  const compliance = await fetch(`${base}/api/compliance/policies`).then((response) => response.json());
+  assert.ok(compliance.rows.length >= 1);
   await new Promise((resolve) => server.close(resolve));
 });

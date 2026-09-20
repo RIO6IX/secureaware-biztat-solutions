@@ -8,14 +8,15 @@ const publicDir = path.join(root, "public");
 const port = Number(process.env.PORT || 4000);
 
 const users = [
-  { id: 1, username: "policy.admin", name: "Policy Administrator", role: "Security/HR Administrator", department: "Information Security" },
-  { id: 2, username: "employee.demo", name: "Employee Demo", role: "Employee", department: "Finance" },
-  { id: 3, username: "manager.demo", name: "Manager Demo", role: "Department Manager", department: "Finance" }
+  { id: 1, username: "policy.admin", name: "Policy Governance Administrator", role: "Security/HR Administrator", department: "Information Security" },
+  { id: 2, username: "finance.analyst01", name: "Finance Analyst 01", role: "Employee", department: "Finance" },
+  { id: 3, username: "finance.manager01", name: "Finance Manager 01", role: "Department Manager", department: "Finance" }
 ];
 
 let nextPolicyId = 4;
 let nextAssignmentId = 4;
-let nextAcknowledgementId = 3;
+let nextAcknowledgementId = 1;
+let nextAuditId = 1;
 
 const policies = [
   {
@@ -56,12 +57,20 @@ const policies = [
 const assignments = [
   { id: 1, policyId: 1, targetType: "role", targetValue: "Employee", dueDate: "2026-10-01", status: "assigned" },
   { id: 2, policyId: 2, targetType: "department", targetValue: "Finance", dueDate: "2026-10-10", status: "assigned" },
-  { id: 3, policyId: 1, targetType: "user", targetValue: "employee.demo", dueDate: "2026-09-30", status: "assigned" }
+  { id: 3, policyId: 1, targetType: "user", targetValue: "finance.analyst01", dueDate: "2026-09-30", status: "assigned" }
 ];
 
-const acknowledgements = [
-  { id: 1, policyId: 1, policyVersion: "1.0", userId: 2, acknowledgedAt: "2026-09-18T08:20:00.000Z", statement: "I have read and understood this policy." },
-  { id: 2, policyId: 2, policyVersion: "1.1", userId: 2, acknowledgedAt: "2026-09-19T10:45:00.000Z", statement: "I agree to follow this policy." }
+const acknowledgements = [];
+
+const auditEvents = [
+  { id: nextAuditId++, actor: "system", action: "policy_program_initialized", target: "SecureAware baseline policy library", createdAt: new Date().toISOString() }
+];
+
+const researchBasis = [
+  { source: "NIST SP 800-50", use: "Policy awareness is treated as measurable evidence, not only document distribution." },
+  { source: "NIST CSF 2.0", use: "Policy acknowledgement and awareness completion support Protect governance outcomes." },
+  { source: "NIST SP 800-12", use: "Acknowledgement statements are used as evidence that users have read and understand requirements." },
+  { source: "OWASP ASVS", use: "Workflow decisions, version checks and authorization checks are enforced server-side." }
 ];
 
 function contentType(filePath) {
@@ -112,6 +121,18 @@ async function handleApi(request, response, url) {
     json(response, 200, { users });
     return;
   }
+  if (request.method === "GET" && url.pathname === "/api/research-basis") {
+    json(response, 200, { researchBasis });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/audit-events") {
+    json(response, 200, { auditEvents: auditEvents.slice(-25).reverse() });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/compliance/policies") {
+    json(response, 200, { rows: complianceRows() });
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/api/policies") {
     const status = url.searchParams.get("status");
     const category = url.searchParams.get("category");
@@ -136,6 +157,7 @@ async function handleApi(request, response, url) {
       content: String(body.content).trim()
     };
     policies.push(policy);
+    recordAudit("policy.admin", "policy_created", `${policy.title} v${policy.version}`);
     json(response, 201, { policy: withPolicyStats(policy) });
     return;
   }
@@ -153,6 +175,7 @@ async function handleApi(request, response, url) {
     if (!policy) return json(response, 404, { message: "Policy not found." });
     policy.status = actionMatch[2] === "publish" ? "published" : "archived";
     if (policy.status === "published" && !policy.effectiveDate) policy.effectiveDate = new Date().toISOString().slice(0, 10);
+    recordAudit("policy.admin", `policy_${policy.status}`, `${policy.title} v${policy.version}`);
     json(response, 200, { policy: withPolicyStats(policy) });
     return;
   }
@@ -172,6 +195,7 @@ async function handleApi(request, response, url) {
       status: "assigned"
     };
     assignments.push(assignment);
+    recordAudit("policy.admin", "policy_assigned", `${assignment.targetType}:${assignment.targetValue}`);
     json(response, 201, { assignment: withPolicy(assignment) });
     return;
   }
@@ -197,11 +221,12 @@ async function handleApi(request, response, url) {
       statement: String(body.statement || "I have read and understood this policy.")
     };
     acknowledgements.push(acknowledgement);
+    recordAudit(user.username, "policy_acknowledged", `${policy.title} v${policy.version}`);
     json(response, 201, { acknowledgement: withAcknowledgementDetails(acknowledgement) });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/employee/policies") {
-    const username = url.searchParams.get("username") || "employee.demo";
+    const username = url.searchParams.get("username") || "finance.analyst01";
     const user = users.find((item) => item.username === username) || users[1];
     json(response, 200, { user, assignedPolicies: assignedPoliciesFor(user) });
     return;
@@ -211,23 +236,39 @@ async function handleApi(request, response, url) {
 
 function dashboard() {
   const assigned = assignedPoliciesFor(users[1]);
+  const rows = complianceRows();
+  const complete = rows.filter((row) => row.status === "complete").length;
   return {
     policies: policies.length,
     publishedPolicies: policies.filter((policy) => policy.status === "published").length,
     assignments: assignments.length,
     acknowledgements: acknowledgements.length,
+    complianceRate: rows.length ? Math.round((complete / rows.length) * 100) : 0,
     employeePending: assigned.filter((item) => !item.acknowledgement).length,
-    overdueAssignments: assignments.filter((assignment) => assignment.dueDate && new Date(assignment.dueDate) < new Date()).length
+    overdueAssignments: rows.filter((row) => row.status === "overdue").length
   };
+}
+
+function complianceRows() {
+  return assignments.flatMap((assignment) => users
+    .filter((user) => matchesAssignment(user, assignment))
+    .map((user) => {
+      const policy = policies.find((item) => item.id === assignment.policyId);
+      const acknowledgement = acknowledgements.find((item) => item.userId === user.id && item.policyId === policy.id && item.policyVersion === policy.version);
+      const overdue = assignment.dueDate && new Date(`${assignment.dueDate}T23:59:59.000Z`) < new Date();
+      return {
+        user: { username: user.username, name: user.name, department: user.department, role: user.role },
+        policy: { id: policy.id, title: policy.title, version: policy.version, category: policy.category },
+        dueDate: assignment.dueDate,
+        status: acknowledgement ? "complete" : overdue ? "overdue" : "pending",
+        acknowledgedAt: acknowledgement?.acknowledgedAt ?? null
+      };
+    }));
 }
 
 function assignedPoliciesFor(user) {
   return assignments
-    .filter((assignment) => {
-      if (assignment.targetType === "role") return assignment.targetValue === user.role;
-      if (assignment.targetType === "department") return assignment.targetValue === user.department;
-      return assignment.targetValue === user.username;
-    })
+    .filter((assignment) => matchesAssignment(user, assignment))
     .map((assignment) => {
       const policy = policies.find((item) => item.id === assignment.policyId);
       const acknowledgement = acknowledgements.find((item) => item.userId === user.id && item.policyId === policy.id && item.policyVersion === policy.version);
@@ -238,10 +279,14 @@ function assignedPoliciesFor(user) {
 function isAssignedTo(user, policyId) {
   return assignments.some((assignment) => {
     if (assignment.policyId !== policyId) return false;
-    if (assignment.targetType === "role") return assignment.targetValue === user.role;
-    if (assignment.targetType === "department") return assignment.targetValue === user.department;
-    return assignment.targetValue === user.username;
+    return matchesAssignment(user, assignment);
   });
+}
+
+function matchesAssignment(user, assignment) {
+  if (assignment.targetType === "role") return assignment.targetValue === user.role;
+  if (assignment.targetType === "department") return assignment.targetValue === user.department;
+  return assignment.targetValue === user.username;
 }
 
 function withPolicyStats(policy) {
@@ -262,6 +307,10 @@ function withAcknowledgementDetails(acknowledgement) {
 
 function pick(body, keys) {
   return Object.fromEntries(keys.filter((key) => body[key] !== undefined).map((key) => [key, body[key]]));
+}
+
+function recordAudit(actor, action, target) {
+  auditEvents.push({ id: nextAuditId++, actor, action, target, createdAt: new Date().toISOString() });
 }
 
 async function readJson(request) {

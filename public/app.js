@@ -5,7 +5,8 @@ const nav = [
   ["policies", "Policies"],
   ["assignments", "Assignments"],
   ["employee", "Employee View"],
-  ["acknowledgements", "Acknowledgements"]
+  ["acknowledgements", "Acknowledgements"],
+  ["audit", "Audit"]
 ];
 
 async function api(path, options = {}) {
@@ -61,15 +62,22 @@ function escapeHtml(value) {
 }
 
 async function dashboard() {
-  const data = await api("/api/dashboard");
+  const [data, { researchBasis }] = await Promise.all([
+    api("/api/dashboard"),
+    api("/api/research-basis")
+  ]);
   shell(`
     <div class="grid metrics">
       <div class="metric"><strong>${data.policies}</strong><span>Total policies</span></div>
       <div class="metric"><strong>${data.publishedPolicies}</strong><span>Published</span></div>
       <div class="metric"><strong>${data.assignments}</strong><span>Assignments</span></div>
-      <div class="metric"><strong>${data.employeePending}</strong><span>Employee pending</span></div>
+      <div class="metric"><strong>${data.complianceRate}%</strong><span>Completion rate</span></div>
     </div>
-    ${panel("Demo Flow", `<p>Create or publish a policy, assign it to a role/department/user, then acknowledge it from the employee workspace.</p>`)}
+    ${panel("Real-World Policy Basis", `
+      <p>This module is aligned to the proposal requirement for versioned policy control, exact-version acknowledgement, compliance visibility, auditability and privacy-safe academic testing.</p>
+      <table><thead><tr><th>Reference</th><th>How it is used</th></tr></thead>
+      <tbody>${researchBasis.map((item) => `<tr><td>${escapeHtml(item.source)}</td><td>${escapeHtml(item.use)}</td></tr>`).join("")}</tbody></table>
+    `)}
   `);
 }
 
@@ -143,7 +151,7 @@ async function assignmentsPage() {
 }
 
 async function employeePage() {
-  const { user, assignedPolicies } = await api("/api/employee/policies?username=employee.demo");
+  const { user, assignedPolicies } = await api("/api/employee/policies?username=finance.analyst01");
   shell(`
     ${panel("Employee Policy Workspace", `<p>${escapeHtml(user.name)} can view assigned published policies and acknowledge the current policy version.</p>`)}
     <div class="grid">
@@ -161,7 +169,7 @@ async function employeePage() {
     button.addEventListener("click", async () => {
       await api(`/api/policies/${button.dataset.ack}/acknowledge`, {
         method: "POST",
-        body: JSON.stringify({ username: "employee.demo", statement: "I have read and understood this policy." })
+        body: JSON.stringify({ username: "finance.analyst01", statement: "I have read and understood the displayed policy version." })
       });
       employeePage();
     });
@@ -169,10 +177,27 @@ async function employeePage() {
 }
 
 async function acknowledgementsPage() {
-  const { acknowledgements } = await api("/api/acknowledgements");
-  shell(panel("Acknowledgement Evidence", `
+  const [{ acknowledgements }, { rows }] = await Promise.all([
+    api("/api/acknowledgements"),
+    api("/api/compliance/policies")
+  ]);
+  shell(`
+    ${panel("Policy Compliance", `
+      <table><thead><tr><th>Employee</th><th>Department</th><th>Policy</th><th>Version</th><th>Due Date</th><th>Status</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.user.name)}</td><td>${escapeHtml(row.user.department)}</td><td>${escapeHtml(row.policy.title)}</td><td>${escapeHtml(row.policy.version)}</td><td>${row.dueDate || "-"}</td><td>${status(row.status)}</td></tr>`).join("")}</tbody></table>
+    `)}
+    ${panel("Acknowledgement Evidence", `
     <table><thead><tr><th>User</th><th>Policy</th><th>Version</th><th>Statement</th><th>Acknowledged At</th></tr></thead>
-    <tbody>${acknowledgements.map((ack) => `<tr><td>${escapeHtml(ack.user?.name)}</td><td>${escapeHtml(ack.policy?.title)}</td><td>${escapeHtml(ack.policyVersion)}</td><td>${escapeHtml(ack.statement)}</td><td>${new Date(ack.acknowledgedAt).toLocaleString()}</td></tr>`).join("")}</tbody></table>
+    <tbody>${acknowledgements.length ? acknowledgements.map((ack) => `<tr><td>${escapeHtml(ack.user?.name)}</td><td>${escapeHtml(ack.policy?.title)}</td><td>${escapeHtml(ack.policyVersion)}</td><td>${escapeHtml(ack.statement)}</td><td>${new Date(ack.acknowledgedAt).toLocaleString()}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">No acknowledgements recorded yet.</td></tr>`}</tbody></table>
+    `)}
+  `);
+}
+
+async function auditPage() {
+  const { auditEvents } = await api("/api/audit-events");
+  shell(panel("Audit Evidence", `
+    <table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead>
+    <tbody>${auditEvents.map((event) => `<tr><td>${new Date(event.createdAt).toLocaleString()}</td><td>${escapeHtml(event.actor)}</td><td>${escapeHtml(event.action)}</td><td>${escapeHtml(event.target)}</td></tr>`).join("")}</tbody></table>
   `));
 }
 
@@ -181,6 +206,7 @@ function render() {
   if (route === "assignments") return assignmentsPage();
   if (route === "employee") return employeePage();
   if (route === "acknowledgements") return acknowledgementsPage();
+  if (route === "audit") return auditPage();
   return dashboard();
 }
 
