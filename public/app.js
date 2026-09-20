@@ -6,7 +6,8 @@ const nav = [
   ["assignments", "Assignments"],
   ["quizzes", "Quiz Builder"],
   ["employee", "Employee View"],
-  ["results", "Results"]
+  ["results", "Results"],
+  ["audit", "Audit"]
 ];
 
 async function api(path, options = {}) {
@@ -62,15 +63,22 @@ function escapeHtml(value) {
 }
 
 async function dashboard() {
-  const data = await api("/api/dashboard");
+  const [data, { researchBasis }] = await Promise.all([
+    api("/api/dashboard"),
+    api("/api/research-basis")
+  ]);
   shell(`
     <div class="grid metrics">
       <div class="metric"><strong>${data.modules}</strong><span>Training modules</span></div>
       <div class="metric"><strong>${data.activeModules}</strong><span>Active modules</span></div>
       <div class="metric"><strong>${data.assignments}</strong><span>Assignments</span></div>
-      <div class="metric"><strong>${data.passRate}%</strong><span>Quiz pass rate</span></div>
+      <div class="metric"><strong>${data.complianceRate}%</strong><span>Completion rate</span></div>
     </div>
-    ${panel("Demo Flow", `<p>Create a module, attach a quiz, assign it to employees, then submit quiz attempts and review results.</p>`)}
+    ${panel("Real-World Training Basis", `
+      <p>This module is aligned to the project proposal requirements for assigned training, server-side quiz scoring, compliance visibility, auditability and privacy-safe academic testing.</p>
+      <table><thead><tr><th>Reference</th><th>How it is used</th></tr></thead>
+      <tbody>${researchBasis.map((item) => `<tr><td>${escapeHtml(item.source)}</td><td>${escapeHtml(item.use)}</td></tr>`).join("")}</tbody></table>
+    `)}
   `);
 }
 
@@ -173,7 +181,7 @@ async function quizzesPage() {
 }
 
 async function employeePage() {
-  const { user, assignedTraining } = await api("/api/employee/assigned-training?username=employee.demo");
+  const { user, assignedTraining } = await api("/api/employee/assigned-training?username=finance.analyst01");
   shell(`
     ${panel("Employee Training Workspace", `<p>${escapeHtml(user.name)} can view assigned training, complete modules and submit quizzes.</p>`)}
     <div class="grid">
@@ -182,27 +190,65 @@ async function employeePage() {
           <h3>${escapeHtml(item.module.title)}</h3>
           <p>${escapeHtml(item.module.content)}</p>
           <p><strong>Due:</strong> ${item.dueDate || "-"} ${item.result ? status(item.result.status) : status("pending")}</p>
-          ${item.module.quiz ? `<button class="primary" data-quiz="${item.module.quiz.id}">Submit Perfect Quiz Attempt</button>` : "<span class='muted'>No quiz attached</span>"}
+          ${item.module.quiz ? quizForm(item.module.quiz) : "<span class='muted'>No quiz attached</span>"}
         </div>
       `).join("")}
     </div>
   `);
-  document.querySelectorAll("[data-quiz]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await api(`/api/quizzes/${button.dataset.quiz}/submit`, {
+  document.querySelectorAll("[data-quiz-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const answers = Array.from(new FormData(form).entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([, value]) => Number(value));
+      await api(`/api/quizzes/${form.dataset.quizForm}/submit`, {
         method: "POST",
-        body: JSON.stringify({ username: "employee.demo", answers: [0, 1] })
+        body: JSON.stringify({ username: "finance.analyst01", answers })
       });
       employeePage();
     });
   });
 }
 
+function quizForm(quiz) {
+  return `
+    <form data-quiz-form="${quiz.id}" class="quiz-form">
+      <strong>${escapeHtml(quiz.title)} - pass mark ${quiz.passMark}%</strong>
+      ${quiz.questions.map((question, questionIndex) => `
+        <fieldset>
+          <legend>${escapeHtml(question.prompt)}</legend>
+          ${question.options.map((option, optionIndex) => `
+            <label class="choice"><input type="radio" name="q${questionIndex}" value="${optionIndex}" required> ${escapeHtml(option)}</label>
+          `).join("")}
+        </fieldset>
+      `).join("")}
+      <button class="primary">Submit Quiz</button>
+    </form>
+  `;
+}
+
 async function resultsPage() {
-  const { results } = await api("/api/results");
-  shell(panel("Quiz Results", `
-    <table><thead><tr><th>User</th><th>Module</th><th>Quiz</th><th>Score</th><th>Status</th><th>Submitted</th></tr></thead>
-    <tbody>${results.map((result) => `<tr><td>${escapeHtml(result.user?.name)}</td><td>${escapeHtml(result.module?.title)}</td><td>${escapeHtml(result.quiz?.title)}</td><td>${result.score}%</td><td>${status(result.status)}</td><td>${new Date(result.submittedAt).toLocaleString()}</td></tr>`).join("")}</tbody></table>
+  const [{ results }, { rows }] = await Promise.all([
+    api("/api/results"),
+    api("/api/compliance/training")
+  ]);
+  shell(`
+    ${panel("Training Compliance", `
+      <table><thead><tr><th>Employee</th><th>Department</th><th>Module</th><th>Due Date</th><th>Score</th><th>Status</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.user.name)}</td><td>${escapeHtml(row.user.department)}</td><td>${escapeHtml(row.module.title)}</td><td>${row.dueDate || "-"}</td><td>${row.score === null ? "-" : `${row.score}%`}</td><td>${status(row.status)}</td></tr>`).join("")}</tbody></table>
+    `)}
+    ${panel("Quiz Results", `
+      <table><thead><tr><th>User</th><th>Module</th><th>Quiz</th><th>Score</th><th>Status</th><th>Submitted</th></tr></thead>
+      <tbody>${results.length ? results.map((result) => `<tr><td>${escapeHtml(result.user?.name)}</td><td>${escapeHtml(result.module?.title)}</td><td>${escapeHtml(result.quiz?.title)}</td><td>${result.score}%</td><td>${status(result.status)}</td><td>${new Date(result.submittedAt).toLocaleString()}</td></tr>`).join("") : `<tr><td colspan="6" class="muted">No quiz attempts submitted yet.</td></tr>`}</tbody></table>
+    `)}
+  `);
+}
+
+async function auditPage() {
+  const { auditEvents } = await api("/api/audit-events");
+  shell(panel("Audit Evidence", `
+    <table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead>
+    <tbody>${auditEvents.map((event) => `<tr><td>${new Date(event.createdAt).toLocaleString()}</td><td>${escapeHtml(event.actor)}</td><td>${escapeHtml(event.action)}</td><td>${escapeHtml(event.target)}</td></tr>`).join("")}</tbody></table>
   `));
 }
 
@@ -212,6 +258,7 @@ function render() {
   if (route === "quizzes") return quizzesPage();
   if (route === "employee") return employeePage();
   if (route === "results") return resultsPage();
+  if (route === "audit") return auditPage();
   return dashboard();
 }
 
