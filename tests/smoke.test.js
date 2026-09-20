@@ -10,3 +10,13 @@ test("health endpoint works", async () => {
   assert.deepEqual(await response.json(), { ok: true });
   await new Promise((resolve) => server.close(resolve));
 });
+
+test("training dashboard exposes member 3 data", async () => {
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const dashboard = await fetch(`${base}/api/dashboard`).then((response) => response.json());
+  assert.ok(dashboard.modules >= 3);
+  const assigned = await fetch(`${base}/api/employee/assigned-training?username=employee.demo`).then((response) => response.json());
+  assert.ok(assigned.assignedTraining.length >= 1);
+  await new Promise((resolve) => server.close(resolve));
+});

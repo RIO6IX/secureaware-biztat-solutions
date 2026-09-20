@@ -1,20 +1,218 @@
-document.getElementById("app").innerHTML = `
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">SA</div><span>SecureAware</span></div>
-      <button class="active">Overview</button>
-    </aside>
-    <main class="main">
-      <header class="topbar">
-        <strong>SecureAware - Biztat Solutions</strong>
-        <span class="muted">Select a contribution branch</span>
-      </header>
-      <section class="workspace">
-        <div class="panel">
-          <h2>Branch-Based Assignment Work</h2>
-          <p>This base branch is intentionally small. Use <strong>chanuka</strong> for Member 3 and <strong>sanduni</strong> for Member 2.</p>
+let route = "dashboard";
+
+const nav = [
+  ["dashboard", "Dashboard"],
+  ["modules", "Training Modules"],
+  ["assignments", "Assignments"],
+  ["quizzes", "Quiz Builder"],
+  ["employee", "Employee View"],
+  ["results", "Results"]
+];
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "content-type": "application/json" },
+    ...options
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || "Request failed");
+  return data;
+}
+
+function shell(content) {
+  document.getElementById("app").innerHTML = `
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><div class="brand-mark">SA</div><span>SecureAware</span></div>
+        ${nav.map(([key, label]) => `<button data-route="${key}" class="${route === key ? "active" : ""}">${label}</button>`).join("")}
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <strong>Member 3 - Security Training + Quiz & Assessment</strong>
+          <span class="muted">Signed in as training.admin</span>
+        </header>
+        <section class="workspace">${content}</section>
+      </main>
+    </div>
+  `;
+  document.querySelectorAll("[data-route]").forEach((button) => {
+    button.addEventListener("click", () => {
+      route = button.dataset.route;
+      render();
+    });
+  });
+}
+
+function panel(title, body) {
+  return `<section class="panel"><h2>${title}</h2>${body}</section>`;
+}
+
+function status(value) {
+  return `<span class="status ${value}">${value}</span>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+async function dashboard() {
+  const data = await api("/api/dashboard");
+  shell(`
+    <div class="grid metrics">
+      <div class="metric"><strong>${data.modules}</strong><span>Training modules</span></div>
+      <div class="metric"><strong>${data.activeModules}</strong><span>Active modules</span></div>
+      <div class="metric"><strong>${data.assignments}</strong><span>Assignments</span></div>
+      <div class="metric"><strong>${data.passRate}%</strong><span>Quiz pass rate</span></div>
+    </div>
+    ${panel("Demo Flow", `<p>Create a module, attach a quiz, assign it to employees, then submit quiz attempts and review results.</p>`)}
+  `);
+}
+
+async function modulesPage() {
+  const { modules } = await api("/api/training/modules");
+  shell(`
+    ${panel("Create Training Module", `
+      <form id="moduleForm" class="form-grid">
+        <label>Title<input name="title" required></label>
+        <label>Category<input name="category" value="Security Awareness"></label>
+        <label>Duration minutes<input name="durationMinutes" type="number" value="15"></label>
+        <label>Status<select name="status"><option value="active">Active</option><option value="draft">Draft</option></select></label>
+        <label class="wide">Training Content<textarea name="content" required></textarea></label>
+        <div class="wide"><button class="primary">Create Module</button></div>
+      </form>
+    `)}
+    ${panel("Training Modules", `
+      <table><thead><tr><th>Title</th><th>Category</th><th>Duration</th><th>Status</th><th>Quiz</th></tr></thead>
+      <tbody>${modules.map((module) => `<tr><td>${escapeHtml(module.title)}</td><td>${escapeHtml(module.category)}</td><td>${module.durationMinutes} min</td><td>${status(module.status)}</td><td>${module.quiz ? escapeHtml(module.quiz.title) : "Not attached"}</td></tr>`).join("")}</tbody></table>
+    `)}
+  `);
+  document.getElementById("moduleForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await api("/api/training/modules", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.target))) });
+    modulesPage();
+  });
+}
+
+async function assignmentsPage() {
+  const [{ modules }, { assignments }] = await Promise.all([
+    api("/api/training/modules"),
+    api("/api/training/assignments")
+  ]);
+  shell(`
+    ${panel("Assign Training", `
+      <form id="assignmentForm" class="form-grid">
+        <label>Module<select name="moduleId">${modules.map((module) => `<option value="${module.id}">${escapeHtml(module.title)}</option>`).join("")}</select></label>
+        <label>Target Type<select name="targetType"><option value="role">Role</option><option value="department">Department</option><option value="user">User</option></select></label>
+        <label>Target Value<input name="targetValue" value="Employee"></label>
+        <label>Due Date<input name="dueDate" type="date"></label>
+        <div class="wide"><button class="primary">Assign Training</button></div>
+      </form>
+    `)}
+    ${panel("Current Assignments", `
+      <table><thead><tr><th>Module</th><th>Target</th><th>Due Date</th><th>Status</th></tr></thead>
+      <tbody>${assignments.map((assignment) => `<tr><td>${escapeHtml(assignment.module?.title)}</td><td>${assignment.targetType}: ${escapeHtml(assignment.targetValue)}</td><td>${assignment.dueDate || "-"}</td><td>${status(assignment.status)}</td></tr>`).join("")}</tbody></table>
+    `)}
+  `);
+  document.getElementById("assignmentForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const body = Object.fromEntries(new FormData(event.target));
+    body.moduleId = Number(body.moduleId);
+    await api("/api/training/assignments", { method: "POST", body: JSON.stringify(body) });
+    assignmentsPage();
+  });
+}
+
+async function quizzesPage() {
+  const [{ modules }, { quizzes }] = await Promise.all([
+    api("/api/training/modules"),
+    api("/api/quizzes")
+  ]);
+  shell(`
+    ${panel("Create Quiz", `
+      <form id="quizForm" class="form-grid">
+        <label>Module<select name="moduleId">${modules.map((module) => `<option value="${module.id}">${escapeHtml(module.title)}</option>`).join("")}</select></label>
+        <label>Quiz Title<input name="title" required></label>
+        <label>Pass Mark<input name="passMark" type="number" value="70"></label>
+        <label class="wide">Question 1<input name="q1" value="What is the best action for suspicious emails?"></label>
+        <label>Option A<input name="q1a" value="Click the link"></label>
+        <label>Option B<input name="q1b" value="Report through approved process"></label>
+        <label class="wide">Question 2<input name="q2" value="Why is MFA important?"></label>
+        <label>Option A<input name="q2a" value="It adds a second verification layer"></label>
+        <label>Option B<input name="q2b" value="It makes passwords public"></label>
+        <div class="wide"><button class="primary">Create Quiz</button></div>
+      </form>
+    `)}
+    ${panel("Quizzes", `
+      <table><thead><tr><th>Quiz</th><th>Module</th><th>Questions</th><th>Pass Mark</th></tr></thead>
+      <tbody>${quizzes.map((quiz) => `<tr><td>${escapeHtml(quiz.title)}</td><td>${escapeHtml(quiz.module?.title)}</td><td>${quiz.questions.length}</td><td>${quiz.passMark}%</td></tr>`).join("")}</tbody></table>
+    `)}
+  `);
+  document.getElementById("quizForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = Object.fromEntries(new FormData(event.target));
+    await api("/api/quizzes", {
+      method: "POST",
+      body: JSON.stringify({
+        moduleId: Number(form.moduleId),
+        title: form.title,
+        passMark: Number(form.passMark),
+        questions: [
+          { prompt: form.q1, options: [form.q1a, form.q1b], answerIndex: 1 },
+          { prompt: form.q2, options: [form.q2a, form.q2b], answerIndex: 0 }
+        ]
+      })
+    });
+    quizzesPage();
+  });
+}
+
+async function employeePage() {
+  const { user, assignedTraining } = await api("/api/employee/assigned-training?username=employee.demo");
+  shell(`
+    ${panel("Employee Training Workspace", `<p>${escapeHtml(user.name)} can view assigned training, complete modules and submit quizzes.</p>`)}
+    <div class="grid">
+      ${assignedTraining.map((item) => `
+        <div class="card">
+          <h3>${escapeHtml(item.module.title)}</h3>
+          <p>${escapeHtml(item.module.content)}</p>
+          <p><strong>Due:</strong> ${item.dueDate || "-"} ${item.result ? status(item.result.status) : status("pending")}</p>
+          ${item.module.quiz ? `<button class="primary" data-quiz="${item.module.quiz.id}">Submit Perfect Quiz Attempt</button>` : "<span class='muted'>No quiz attached</span>"}
         </div>
-      </section>
-    </main>
-  </div>
-`;
+      `).join("")}
+    </div>
+  `);
+  document.querySelectorAll("[data-quiz]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await api(`/api/quizzes/${button.dataset.quiz}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ username: "employee.demo", answers: [0, 1] })
+      });
+      employeePage();
+    });
+  });
+}
+
+async function resultsPage() {
+  const { results } = await api("/api/results");
+  shell(panel("Quiz Results", `
+    <table><thead><tr><th>User</th><th>Module</th><th>Quiz</th><th>Score</th><th>Status</th><th>Submitted</th></tr></thead>
+    <tbody>${results.map((result) => `<tr><td>${escapeHtml(result.user?.name)}</td><td>${escapeHtml(result.module?.title)}</td><td>${escapeHtml(result.quiz?.title)}</td><td>${result.score}%</td><td>${status(result.status)}</td><td>${new Date(result.submittedAt).toLocaleString()}</td></tr>`).join("")}</tbody></table>
+  `));
+}
+
+function render() {
+  if (route === "modules") return modulesPage();
+  if (route === "assignments") return assignmentsPage();
+  if (route === "quizzes") return quizzesPage();
+  if (route === "employee") return employeePage();
+  if (route === "results") return resultsPage();
+  return dashboard();
+}
+
+render();
