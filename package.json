@@ -1,0 +1,12 @@
+{
+  "name": "secureaware-biztat-solutions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server/index.js",
+    "start": "node server/index.js",
+    "build": "node --check server/index.js && node --check public/app.js",
+    "test": "node --test"
+  }
+}
