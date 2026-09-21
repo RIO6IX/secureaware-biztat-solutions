@@ -14,15 +14,15 @@ const modules = [
 ];
 
 const quizzes = [
-  { id: 1, moduleId: 1, title: "Phishing Awareness Quiz", passMark: 70, questions: [
+  { id: 1, moduleId: 1, title: "Phishing Awareness Quiz", passMark: 70, maxAttempts: 3, questions: [
     { prompt: "Which sign most strongly suggests a phishing email?", options: ["Urgent request for credentials", "A known colleague's normal signature", "Company newsletter", "Approved HR memo"], answerIndex: 0 },
     { prompt: "What should an employee do with a suspicious link?", options: ["Click to verify it", "Forward to everyone", "Report it using the approved process", "Ignore all emails"], answerIndex: 2 }
   ] },
-  { id: 2, moduleId: 2, title: "Password Manager and MFA Quiz", passMark: 70, questions: [
+  { id: 2, moduleId: 2, title: "Password Manager and MFA Quiz", passMark: 70, maxAttempts: 3, questions: [
     { prompt: "What is the safest password practice?", options: ["Reuse memorable passwords", "Use a password manager", "Write passwords on desk notes", "Share passwords with team leads"], answerIndex: 1 },
     { prompt: "Why should an unexpected MFA approval prompt be reported?", options: ["It may indicate a credential attack", "It means the password is expired", "It makes the account faster", "It is always a system test"], answerIndex: 0 }
   ] },
-  { id: 3, moduleId: 3, title: "Information Handling Quiz", passMark: 80, questions: [
+  { id: 3, moduleId: 3, title: "Information Handling Quiz", passMark: 80, maxAttempts: 3, questions: [
     { prompt: "Where should sensitive business documents be stored?", options: ["Approved company storage", "Personal email", "Public file shares", "Unlabeled USB drives"], answerIndex: 0 },
     { prompt: "What is the safest action before leaving a workstation?", options: ["Leave documents open", "Lock the screen", "Share the session", "Disable MFA"], answerIndex: 1 }
   ] }
@@ -71,14 +71,15 @@ async function api(request, url) {
     const quiz = quizzes.find((item) => item.id === Number(match[1]));
     if (!quiz) return json({ message: "Quiz not found." }, 404);
     const body = await request.json().catch(() => ({}));
+    const previousAttempts = results.filter((item) => item.userId === users[1].id && item.quizId === quiz.id);
+    if (previousAttempts.length >= quiz.maxAttempts && !previousAttempts.some((item) => item.status === "passed")) return json({ message: "Maximum quiz attempts reached." }, 429);
     const answers = Array.isArray(body.answers) ? body.answers.map(Number) : [];
     const correct = quiz.questions.filter((question, index) => question.answerIndex === answers[index]).length;
     const score = Math.round((correct / quiz.questions.length) * 100);
-    const existing = results.find((item) => item.userId === users[1].id && item.quizId === quiz.id);
-    const result = existing || { id: nextResultId++, userId: users[1].id, moduleId: quiz.moduleId, quizId: quiz.id };
+    const result = { id: nextResultId++, userId: users[1].id, moduleId: quiz.moduleId, quizId: quiz.id, attemptNumber: previousAttempts.length + 1 };
     Object.assign(result, { score, status: score >= quiz.passMark ? "passed" : "failed", submittedAt: new Date().toISOString() });
-    if (!existing) results.push(result);
-    auditEvents.push({ id: nextAuditId++, actor: users[1].username, action: "quiz_submitted", target: `${quiz.title} - ${score}%`, createdAt: new Date().toISOString() });
+    results.push(result);
+    auditEvents.push({ id: nextAuditId++, actor: users[1].username, action: "quiz_submitted", target: `${quiz.title} attempt ${result.attemptNumber} - ${score}%`, createdAt: new Date().toISOString() });
     return json({ result: withResultDetails(result) }, 201);
   }
   return json({ message: "Not found" }, 404);
@@ -93,7 +94,7 @@ function dashboard() {
 function complianceRows() {
   return assignments.flatMap((assignment) => users.filter((user) => matches(user, assignment)).map((user) => {
     const module = modules.find((item) => item.id === assignment.moduleId);
-    const result = results.find((item) => item.userId === user.id && item.moduleId === module.id);
+    const result = bestResultFor(user.id, module.id);
     const overdue = assignment.dueDate && new Date(`${assignment.dueDate}T23:59:59.000Z`) < new Date();
     return { user, module, dueDate: assignment.dueDate, score: result?.score ?? null, status: result?.status === "passed" ? "complete" : overdue ? "overdue" : "pending", submittedAt: result?.submittedAt ?? null };
   }));
@@ -102,7 +103,7 @@ function complianceRows() {
 function assignedFor(user) {
   return assignments.filter((assignment) => matches(user, assignment)).map((assignment) => {
     const module = modules.find((item) => item.id === assignment.moduleId);
-    const result = results.find((item) => item.userId === user.id && item.moduleId === module.id);
+    const result = bestResultFor(user.id, module.id);
     return { ...assignment, module: withQuiz(module), result: result ? withResultDetails(result) : null };
   });
 }
@@ -114,15 +115,26 @@ function matches(user, assignment) {
 }
 
 function withQuiz(module) {
-  return { ...module, quiz: quizzes.find((quiz) => quiz.id === module.quizId) || null };
+  const quiz = quizzes.find((item) => item.id === module.quizId);
+  return { ...module, quiz: quiz ? publicQuiz(quiz) : null };
 }
 
 function withModuleForQuiz(quiz) {
-  return { ...quiz, module: modules.find((module) => module.id === quiz.moduleId) || null };
+  return { ...publicQuiz(quiz), module: modules.find((module) => module.id === quiz.moduleId) || null };
 }
 
 function withResultDetails(result) {
-  return { ...result, user: users.find((user) => user.id === result.userId), module: modules.find((module) => module.id === result.moduleId), quiz: quizzes.find((quiz) => quiz.id === result.quizId) };
+  const quiz = quizzes.find((item) => item.id === result.quizId);
+  return { ...result, user: users.find((user) => user.id === result.userId), module: modules.find((module) => module.id === result.moduleId), quiz: quiz ? publicQuiz(quiz) : null };
+}
+
+function publicQuiz(quiz) {
+  return { id: quiz.id, moduleId: quiz.moduleId, title: quiz.title, passMark: quiz.passMark, maxAttempts: quiz.maxAttempts, questions: quiz.questions.map((question, index) => ({ id: `${quiz.id}-${index + 1}`, prompt: question.prompt, options: question.options.map((option, optionIndex) => ({ id: optionIndex, text: option })) })) };
+}
+
+function bestResultFor(userId, moduleId) {
+  const attempts = results.filter((item) => item.userId === userId && item.moduleId === moduleId);
+  return attempts.find((item) => item.status === "passed") || attempts.at(-1) || null;
 }
 
 function json(body, status = 200) {
@@ -153,7 +165,7 @@ function panel(title,body){return '<section class="panel"><h2>'+title+'</h2>'+bo
 function shell(content){app.innerHTML='<div class="shell"><aside class="side"><div class="brand">SecureAware</div>'+nav.map(([key,label])=>'<button data-route="'+key+'" class="'+(route===key?"active":"")+'">'+label+'</button>').join("")+'</aside><main><header class="top"><strong>Member 3 - Security Training + Quiz & Assessment</strong><span class="muted">Pilot-safe training environment</span></header><section class="workspace">'+content+'</section></main></div>';document.querySelectorAll("[data-route]").forEach((button)=>button.onclick=()=>{route=button.dataset.route;render()})}
 async function dashboard(){const [d,r]=await Promise.all([api("/api/dashboard"),api("/api/research-basis")]);shell('<div class="grid metrics"><div class="metric"><strong>'+d.modules+'</strong><span>Training modules</span></div><div class="metric"><strong>'+d.activeModules+'</strong><span>Active modules</span></div><div class="metric"><strong>'+d.assignments+'</strong><span>Assignments</span></div><div class="metric"><strong>'+d.complianceRate+'%</strong><span>Completion rate</span></div></div>'+panel("Research-Based Scope",'<p>This version follows the proposal requirement for assigned training, server-side quiz scoring, compliance visibility, auditability and privacy-safe academic testing.</p><table><thead><tr><th>Reference</th><th>Use</th></tr></thead><tbody>'+r.researchBasis.map((x)=>'<tr><td>'+esc(x.source)+'</td><td>'+esc(x.use)+'</td></tr>').join("")+'</tbody></table>'))}
 async function employee(){const data=await api("/api/employee/assigned-training");shell(panel("Employee Training Workspace",'<p>'+esc(data.user.name)+' can complete assigned training and submit real quiz answers.</p>')+'<div class="grid">'+data.assignedTraining.map((item)=>'<div class="card"><h3>'+esc(item.module.title)+'</h3><p>'+esc(item.module.content)+'</p><p><strong>Due:</strong> '+item.dueDate+' '+(item.result?status(item.result.status):status("pending"))+'</p>'+quizForm(item.module.quiz)+'</div>').join("")+'</div>');document.querySelectorAll("[data-quiz]").forEach((form)=>form.onsubmit=async(event)=>{event.preventDefault();const answers=Array.from(new FormData(form).entries()).sort(([a],[b])=>a.localeCompare(b)).map(([,v])=>Number(v));await api("/api/quizzes/"+form.dataset.quiz+"/submit",{method:"POST",body:JSON.stringify({answers})});employee()})}
-function quizForm(quiz){return '<form class="quiz" data-quiz="'+quiz.id+'"><strong>'+esc(quiz.title)+' - pass mark '+quiz.passMark+'%</strong>'+quiz.questions.map((q,i)=>'<fieldset><legend>'+esc(q.prompt)+'</legend>'+q.options.map((o,j)=>'<label class="choice"><input type="radio" name="q'+i+'" value="'+j+'" required>'+esc(o)+'</label>').join("")+'</fieldset>').join("")+'<button class="primary">Submit Quiz</button></form>'}
+function quizForm(quiz){return '<form class="quiz" data-quiz="'+quiz.id+'"><strong>'+esc(quiz.title)+' - pass mark '+quiz.passMark+'% - max attempts '+quiz.maxAttempts+'</strong>'+quiz.questions.map((q,i)=>'<fieldset><legend>'+esc(q.prompt)+'</legend>'+q.options.map((o)=>'<label class="choice"><input type="radio" name="q'+i+'" value="'+o.id+'" required>'+esc(o.text)+'</label>').join("")+'</fieldset>').join("")+'<button class="primary">Submit Quiz</button></form>'}
 async function results(){const [c,r]=await Promise.all([api("/api/compliance/training"),api("/api/results")]);shell(panel("Training Compliance",'<table><thead><tr><th>Employee</th><th>Department</th><th>Module</th><th>Due</th><th>Score</th><th>Status</th></tr></thead><tbody>'+c.rows.map((row)=>'<tr><td>'+esc(row.user.name)+'</td><td>'+esc(row.user.department)+'</td><td>'+esc(row.module.title)+'</td><td>'+row.dueDate+'</td><td>'+(row.score===null?"-":row.score+"%")+'</td><td>'+status(row.status)+'</td></tr>').join("")+'</tbody></table>')+panel("Quiz Results",'<table><thead><tr><th>User</th><th>Quiz</th><th>Score</th><th>Status</th><th>Submitted</th></tr></thead><tbody>'+(r.results.length?r.results.map((x)=>'<tr><td>'+esc(x.user.name)+'</td><td>'+esc(x.quiz.title)+'</td><td>'+x.score+'%</td><td>'+status(x.status)+'</td><td>'+new Date(x.submittedAt).toLocaleString()+'</td></tr>').join(""):'<tr><td colspan="5" class="muted">No quiz attempts submitted yet.</td></tr>')+'</tbody></table>'))}
 async function audit(){const data=await api("/api/audit-events");shell(panel("Audit Evidence",'<table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead><tbody>'+data.auditEvents.map((x)=>'<tr><td>'+new Date(x.createdAt).toLocaleString()+'</td><td>'+esc(x.actor)+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.target)+'</td></tr>').join("")+'</tbody></table>'))}
 function render(){if(route==="employee")return employee();if(route==="results")return results();if(route==="audit")return audit();return dashboard()}

@@ -213,12 +213,12 @@ async function employeePage() {
 function quizForm(quiz) {
   return `
     <form data-quiz-form="${quiz.id}" class="quiz-form">
-      <strong>${escapeHtml(quiz.title)} - pass mark ${quiz.passMark}%</strong>
+      <strong>${escapeHtml(quiz.title)} - pass mark ${quiz.passMark}% - max attempts ${quiz.maxAttempts}</strong>
       ${quiz.questions.map((question, questionIndex) => `
         <fieldset>
           <legend>${escapeHtml(question.prompt)}</legend>
-          ${question.options.map((option, optionIndex) => `
-            <label class="choice"><input type="radio" name="q${questionIndex}" value="${optionIndex}" required> ${escapeHtml(option)}</label>
+          ${question.options.map((option) => `
+            <label class="choice"><input type="radio" name="q${questionIndex}" value="${option.id}" required> ${escapeHtml(option.text)}</label>
           `).join("")}
         </fieldset>
       `).join("")}
@@ -238,8 +238,8 @@ async function resultsPage() {
       <tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.user.name)}</td><td>${escapeHtml(row.user.department)}</td><td>${escapeHtml(row.module.title)}</td><td>${row.dueDate || "-"}</td><td>${row.score === null ? "-" : `${row.score}%`}</td><td>${status(row.status)}</td></tr>`).join("")}</tbody></table>
     `)}
     ${panel("Quiz Results", `
-      <table><thead><tr><th>User</th><th>Module</th><th>Quiz</th><th>Score</th><th>Status</th><th>Submitted</th></tr></thead>
-      <tbody>${results.length ? results.map((result) => `<tr><td>${escapeHtml(result.user?.name)}</td><td>${escapeHtml(result.module?.title)}</td><td>${escapeHtml(result.quiz?.title)}</td><td>${result.score}%</td><td>${status(result.status)}</td><td>${new Date(result.submittedAt).toLocaleString()}</td></tr>`).join("") : `<tr><td colspan="6" class="muted">No quiz attempts submitted yet.</td></tr>`}</tbody></table>
+      <table><thead><tr><th>User</th><th>Module</th><th>Quiz</th><th>Attempt</th><th>Score</th><th>Status</th><th>Submitted</th></tr></thead>
+      <tbody>${results.length ? results.map((result) => `<tr><td>${escapeHtml(result.user?.name)}</td><td>${escapeHtml(result.module?.title)}</td><td>${escapeHtml(result.quiz?.title)}</td><td>${result.attemptNumber}</td><td>${result.score}%</td><td>${status(result.status)}</td><td>${new Date(result.submittedAt).toLocaleString()}</td></tr>`).join("") : `<tr><td colspan="7" class="muted">No quiz attempts submitted yet.</td></tr>`}</tbody></table>
     `)}
   `);
 }

@@ -55,6 +55,7 @@ const quizzes = [
     moduleId: 1,
     title: "Phishing Awareness Quiz",
     passMark: 70,
+    maxAttempts: 3,
     questions: [
       { prompt: "Which sign most strongly suggests a phishing email?", options: ["Urgent request for credentials", "A known colleague's normal signature", "Company newsletter", "Approved HR memo"], answerIndex: 0 },
       { prompt: "What should an employee do with a suspicious link?", options: ["Click to verify it", "Forward to everyone", "Report it using the approved process", "Ignore all emails"], answerIndex: 2 }
@@ -65,6 +66,7 @@ const quizzes = [
     moduleId: 2,
     title: "Password Manager and MFA Quiz",
     passMark: 70,
+    maxAttempts: 3,
     questions: [
       { prompt: "What is the safest password practice?", options: ["Reuse memorable passwords", "Use a password manager", "Write passwords on desk notes", "Share passwords with team leads"], answerIndex: 1 },
       { prompt: "Why should an unexpected MFA approval prompt be reported?", options: ["It may indicate a credential attack", "It means the password is expired", "It makes the account faster", "It is always a system test"], answerIndex: 0 }
@@ -75,6 +77,7 @@ const quizzes = [
     moduleId: 3,
     title: "Information Handling Quiz",
     passMark: 80,
+    maxAttempts: 3,
     questions: [
       { prompt: "Where should sensitive business documents be stored?", options: ["Approved company storage", "Personal email", "Public file shares", "Unlabeled USB drives"], answerIndex: 0 },
       { prompt: "What is the safest action before leaving a workstation?", options: ["Leave documents open", "Lock the screen", "Share the session", "Disable MFA"], answerIndex: 1 }
@@ -229,6 +232,7 @@ async function handleApi(request, response, url) {
       moduleId: module.id,
       title: String(body.title).trim(),
       passMark: Number(body.passMark || 70),
+      maxAttempts: Number(body.maxAttempts || 3),
       questions: body.questions.map((question) => ({
         prompt: String(question.prompt || "").trim(),
         options: question.options.map(String),
@@ -247,15 +251,19 @@ async function handleApi(request, response, url) {
     if (!quiz) return json(response, 404, { message: "Quiz not found." });
     const body = await readJson(request);
     const user = users.find((item) => item.username === body.username) || users[1];
+    const previousAttempts = results.filter((item) => item.userId === user.id && item.quizId === quiz.id);
+    if (previousAttempts.length >= quiz.maxAttempts && !previousAttempts.some((item) => item.status === "passed")) {
+      return json(response, 429, { message: "Maximum quiz attempts reached." });
+    }
     const answers = Array.isArray(body.answers) ? body.answers.map(Number) : [];
     const correct = quiz.questions.filter((question, index) => question.answerIndex === answers[index]).length;
     const score = Math.round((correct / quiz.questions.length) * 100);
-    const existing = results.find((item) => item.userId === user.id && item.quizId === quiz.id);
-    const result = existing || {
+    const result = {
       id: nextResultId++,
       userId: user.id,
       moduleId: quiz.moduleId,
       quizId: quiz.id,
+      attemptNumber: previousAttempts.length + 1,
       score: 0,
       status: "failed",
       submittedAt: ""
@@ -265,8 +273,8 @@ async function handleApi(request, response, url) {
       status: score >= quiz.passMark ? "passed" : "failed",
       submittedAt: new Date().toISOString()
     });
-    if (!existing) results.push(result);
-    recordAudit(user.username, "quiz_submitted", `${quiz.title} - ${score}%`);
+    results.push(result);
+    recordAudit(user.username, "quiz_submitted", `${quiz.title} attempt ${result.attemptNumber} - ${score}%`);
     json(response, 201, { result: withResultDetails(result) });
     return;
   }
@@ -302,7 +310,7 @@ function complianceRows() {
     .filter((user) => matchesAssignment(user, assignment))
     .map((user) => {
       const module = modules.find((item) => item.id === assignment.moduleId);
-      const result = results.find((item) => item.userId === user.id && item.moduleId === module.id);
+      const result = bestResultFor(user.id, module.id);
       const overdue = assignment.dueDate && new Date(`${assignment.dueDate}T23:59:59.000Z`) < new Date();
       const complete = result?.status === "passed";
       return {
@@ -323,7 +331,7 @@ function assignedFor(user) {
     .filter((assignment) => matchesAssignment(user, assignment))
     .map((assignment) => {
       const module = modules.find((item) => item.id === assignment.moduleId);
-      const result = results.find((item) => item.userId === user.id && item.moduleId === module.id);
+      const result = bestResultFor(user.id, module.id);
       return { ...assignment, module: withQuiz(module), result: result ? withResultDetails(result) : null };
     });
 }
@@ -335,7 +343,8 @@ function matchesAssignment(user, assignment) {
 }
 
 function withQuiz(module) {
-  return { ...module, quiz: quizzes.find((quiz) => quiz.id === module.quizId) || null };
+  const quiz = quizzes.find((item) => item.id === module.quizId);
+  return { ...module, quiz: quiz ? publicQuiz(quiz) : null };
 }
 
 function withModule(assignment) {
@@ -343,14 +352,34 @@ function withModule(assignment) {
 }
 
 function withModuleForQuiz(quiz) {
-  return { ...quiz, module: modules.find((module) => module.id === quiz.moduleId) || null };
+  return { ...publicQuiz(quiz), module: modules.find((module) => module.id === quiz.moduleId) || null };
 }
 
 function withResultDetails(result) {
   const user = users.find((item) => item.id === result.userId);
   const module = modules.find((item) => item.id === result.moduleId);
   const quiz = quizzes.find((item) => item.id === result.quizId);
-  return { ...result, user, module, quiz };
+  return { ...result, user, module, quiz: quiz ? publicQuiz(quiz) : null };
+}
+
+function publicQuiz(quiz) {
+  return {
+    id: quiz.id,
+    moduleId: quiz.moduleId,
+    title: quiz.title,
+    passMark: quiz.passMark,
+    maxAttempts: quiz.maxAttempts,
+    questions: quiz.questions.map((question, index) => ({
+      id: `${quiz.id}-${index + 1}`,
+      prompt: question.prompt,
+      options: question.options.map((option, optionIndex) => ({ id: optionIndex, text: option }))
+    }))
+  };
+}
+
+function bestResultFor(userId, moduleId) {
+  const attempts = results.filter((item) => item.userId === userId && item.moduleId === moduleId);
+  return attempts.find((item) => item.status === "passed") || attempts.at(-1) || null;
 }
 
 function recordAudit(actor, action, target) {
