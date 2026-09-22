@@ -7,16 +7,58 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "public");
 const port = Number(process.env.PORT || 4000);
 
+const daysFromNow = (offset) => {
+  const date = new Date();
+  date.setUTCHours(12, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+};
+
 const users = [
-  { id: 1, username: "policy.admin", name: "Policy Governance Administrator", role: "Security/HR Administrator", department: "Information Security" },
-  { id: 2, username: "finance.analyst01", name: "Finance Analyst 01", role: "Employee", department: "Finance" },
-  { id: 3, username: "finance.manager01", name: "Finance Manager 01", role: "Department Manager", department: "Finance" }
+  { id: 1, name: "Nimal Perera", username: "nimal.manager", department: "Leadership", role: "Management", policiesAssigned: 6, policiesAcknowledged: 6, trainingAssigned: 4, trainingCompleted: 4, quizScore: 94, lastActivity: daysFromNow(-1) },
+  { id: 2, name: "Ayesha Fernando", username: "ayesha.manager", department: "Leadership", role: "Management", policiesAssigned: 6, policiesAcknowledged: 5, trainingAssigned: 4, trainingCompleted: 4, quizScore: 88, lastActivity: daysFromNow(-2) },
+  { id: 3, name: "Kavindu Silva", username: "kavindu.consultant", department: "Consulting", role: "Consultant", policiesAssigned: 5, policiesAcknowledged: 5, trainingAssigned: 4, trainingCompleted: 4, quizScore: 91, lastActivity: daysFromNow(-1) },
+  { id: 4, name: "Dinithi Jayasinghe", username: "dinithi.consultant", department: "Consulting", role: "Consultant", policiesAssigned: 5, policiesAcknowledged: 4, trainingAssigned: 4, trainingCompleted: 3, quizScore: 76, lastActivity: daysFromNow(-4) },
+  { id: 5, name: "Ravindu Senanayake", username: "ravindu.consultant", department: "Consulting", role: "Consultant", policiesAssigned: 5, policiesAcknowledged: 5, trainingAssigned: 4, trainingCompleted: 4, quizScore: 86, lastActivity: daysFromNow(-2) },
+  { id: 6, name: "Tharushi Maduranga", username: "tharushi.marketing", department: "Marketing", role: "Marketing", policiesAssigned: 5, policiesAcknowledged: 4, trainingAssigned: 3, trainingCompleted: 2, quizScore: 68, lastActivity: daysFromNow(-7) },
+  { id: 7, name: "Sahan Wijesinghe", username: "sahan.marketing", department: "Marketing", role: "Marketing", policiesAssigned: 5, policiesAcknowledged: 5, trainingAssigned: 3, trainingCompleted: 3, quizScore: 82, lastActivity: daysFromNow(-3) },
+  { id: 8, name: "Isuru Gunawardena", username: "isuru.contractor", department: "Development", role: "External Contractor", policiesAssigned: 4, policiesAcknowledged: 3, trainingAssigned: 4, trainingCompleted: 2, quizScore: 64, lastActivity: daysFromNow(-9) },
+  { id: 9, name: "Piumi Ekanayake", username: "piumi.intern", department: "Internship", role: "Intern", policiesAssigned: 4, policiesAcknowledged: 4, trainingAssigned: 3, trainingCompleted: 3, quizScore: 79, lastActivity: daysFromNow(-2) },
+  { id: 10, name: "Chamod Rathnayake", username: "chamod.intern", department: "Internship", role: "Intern", policiesAssigned: 4, policiesAcknowledged: 3, trainingAssigned: 3, trainingCompleted: 2, quizScore: 72, lastActivity: daysFromNow(-6) }
 ];
 
-let nextPolicyId = 4;
-let nextAssignmentId = 4;
-let nextAcknowledgementId = 1;
-let nextAuditId = 1;
+const overdueItems = [
+  { id: 1, userId: 8, category: "Policy", title: "Secure Development Policy v1.2", dueDate: daysFromNow(-9), severity: "high", reminderSent: false },
+  { id: 2, userId: 6, category: "Training", title: "Phishing Awareness Refresher", dueDate: daysFromNow(-7), severity: "high", reminderSent: true },
+  { id: 3, userId: 4, category: "Training", title: "Client Data Handling", dueDate: daysFromNow(-4), severity: "medium", reminderSent: false },
+  { id: 4, userId: 2, category: "Policy", title: "Remote Working Policy v2.0", dueDate: daysFromNow(-3), severity: "medium", reminderSent: false },
+  { id: 5, userId: 10, category: "Policy", title: "Acceptable Use Policy v1.0", dueDate: daysFromNow(-2), severity: "low", reminderSent: true }
+];
+
+let notifications = [
+  { id: 1, type: "risk", title: "High-risk compliance item", message: "Secure Development Policy acknowledgement is 9 days overdue.", createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(), read: false },
+  { id: 2, type: "training", title: "Training completion improved", message: "Consulting reached 92% training completion this week.", createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), read: false },
+  { id: 3, type: "policy", title: "Policy version published", message: "Remote Working Policy v2.0 is now included in compliance reporting.", createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(), read: true },
+  { id: 4, type: "report", title: "Weekly report ready", message: "The weekly executive compliance summary is ready to export.", createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(), read: true }
+];
+
+let notificationSettings = {
+  assignmentCreated: true,
+  dueSoon: true,
+  overdue: true,
+  weeklyDigest: true
+};
+
+const auditEvents = [
+  { id: 1, actor: "compliance.admin", action: "REPORT_VIEWED", target: "Executive compliance summary", createdAt: new Date(Date.now() - 40 * 60 * 1000).toISOString() },
+  { id: 2, actor: "system", action: "REMINDER_SENT", target: "Phishing Awareness Refresher", createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString() },
+  { id: 3, actor: "policy.admin", action: "POLICY_PUBLISHED", target: "Remote Working Policy v2.0", createdAt: new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString() },
+  { id: 4, actor: "training.admin", action: "TRAINING_ASSIGNED", target: "Client Data Handling", createdAt: new Date(Date.now() - 29 * 60 * 60 * 1000).toISOString() }
+];
+
+let nextPolicyId = 5;
+let nextPolicyAssignmentId = 5;
+let nextAcknowledgementId = 3;
 
 const policies = [
   {
@@ -26,125 +68,360 @@ const policies = [
     version: "1.0",
     owner: "Information Security",
     status: "published",
-    effectiveDate: "2026-09-01",
-    summary: "Defines approved use of Biztat Solutions systems, internet, email and information assets.",
-    content: "Employees must use company systems for approved business purposes, protect credentials and report suspected misuse."
+    effectiveDate: daysFromNow(-22),
+    summary: "Defines approved use of Biztat Solutions systems, internet, email and company information assets.",
+    content: "Employees must use company systems for approved business purposes, protect credentials, avoid unauthorized software and report suspected misuse."
   },
   {
     id: 2,
     title: "Password and MFA Policy",
     category: "Access Control",
     version: "1.1",
-    owner: "Information Security",
+    owner: "IT Security",
     status: "published",
-    effectiveDate: "2026-09-05",
-    summary: "Sets password, passphrase and multi-factor authentication requirements.",
-    content: "Passwords must be unique, protected and not shared. MFA must be enabled for approved business systems."
+    effectiveDate: daysFromNow(-18),
+    summary: "Sets passphrase, password manager and multi-factor authentication requirements.",
+    content: "Passwords must be unique, protected and not shared. MFA must be enabled for approved business systems and unexpected prompts must be reported."
   },
   {
     id: 3,
     title: "Remote Work Security Policy",
     category: "Remote Work",
-    version: "0.9",
+    version: "2.0",
     owner: "Human Resources",
+    status: "published",
+    effectiveDate: daysFromNow(-8),
+    summary: "Explains secure remote access, device handling, network use and home-working expectations.",
+    content: "Remote work requires approved devices, secure networks, screen privacy and company authorization before accessing client information."
+  },
+  {
+    id: 4,
+    title: "Secure Development Policy",
+    category: "Application Security",
+    version: "1.2",
+    owner: "Engineering Security",
     status: "draft",
     effectiveDate: "",
-    summary: "Draft policy for secure remote work and device handling.",
-    content: "Remote access must use approved devices, secure networks and company authorization."
+    summary: "Draft policy for input validation, dependency review, secrets handling and secure release checks.",
+    content: "Developers must validate input, keep dependencies reviewed, protect secrets and follow secure review practices before release."
   }
 ];
 
-const assignments = [
-  { id: 1, policyId: 1, targetType: "role", targetValue: "Employee", dueDate: "2026-10-01", status: "assigned" },
-  { id: 2, policyId: 2, targetType: "department", targetValue: "Finance", dueDate: "2026-10-10", status: "assigned" },
-  { id: 3, policyId: 1, targetType: "user", targetValue: "finance.analyst01", dueDate: "2026-09-30", status: "assigned" }
+const policyAssignments = [
+  { id: 1, policyId: 1, targetType: "role", targetValue: "Consultant", dueDate: daysFromNow(8), status: "assigned" },
+  { id: 2, policyId: 2, targetType: "department", targetValue: "Marketing", dueDate: daysFromNow(12), status: "assigned" },
+  { id: 3, policyId: 3, targetType: "department", targetValue: "Leadership", dueDate: daysFromNow(-3), status: "assigned" },
+  { id: 4, policyId: 1, targetType: "user", targetValue: "isuru.contractor", dueDate: daysFromNow(-9), status: "assigned" }
 ];
 
-const acknowledgements = [];
-
-const auditEvents = [
-  { id: nextAuditId++, actor: "system", action: "policy_program_initialized", target: "SecureAware baseline policy library", createdAt: new Date().toISOString() }
+const acknowledgements = [
+  { id: 1, policyId: 1, policyVersion: "1.0", userId: 3, statement: "I have read and understood this policy.", acknowledgedAt: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString() },
+  { id: 2, policyId: 2, policyVersion: "1.1", userId: 6, statement: "I agree to follow this policy.", acknowledgedAt: new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString() }
 ];
 
-const researchBasis = [
-  { source: "NIST SP 800-50", use: "Policy awareness is treated as measurable evidence, not only document distribution." },
-  { source: "NIST CSF 2.0", use: "Policy acknowledgement and awareness completion support Protect governance outcomes." },
-  { source: "NIST SP 800-12", use: "Acknowledgement statements are used as evidence that users have read and understand requirements." },
-  { source: "OWASP ASVS", use: "Workflow decisions, version checks and authorization checks are enforced server-side." }
-];
+const trendByPeriod = {
+  30: [72, 75, 77, 79, 82, 84, 86],
+  60: [64, 67, 70, 73, 77, 81, 86],
+  90: [58, 62, 66, 70, 75, 80, 86]
+};
+
+function percent(completed, total) {
+  return total === 0 ? 0 : Math.round((completed / total) * 100);
+}
+
+function riskFor(user) {
+  const policyRate = percent(user.policiesAcknowledged, user.policiesAssigned);
+  const trainingRate = percent(user.trainingCompleted, user.trainingAssigned);
+  if (policyRate < 80 || trainingRate < 70 || user.quizScore < 70) return "high";
+  if (policyRate < 100 || trainingRate < 100 || user.quizScore < 80) return "medium";
+  return "low";
+}
+
+function filteredUsers(department) {
+  return !department || department === "All"
+    ? users
+    : users.filter((user) => user.department === department);
+}
+
+function buildDashboard(department = "All", period = 30) {
+  const selectedUsers = filteredUsers(department);
+  const policiesAssigned = selectedUsers.reduce((sum, user) => sum + user.policiesAssigned, 0);
+  const policiesAcknowledged = selectedUsers.reduce((sum, user) => sum + user.policiesAcknowledged, 0);
+  const trainingAssigned = selectedUsers.reduce((sum, user) => sum + user.trainingAssigned, 0);
+  const trainingCompleted = selectedUsers.reduce((sum, user) => sum + user.trainingCompleted, 0);
+  const quizzesPassed = selectedUsers.filter((user) => user.quizScore >= 70).length;
+  const policyRate = percent(policiesAcknowledged, policiesAssigned);
+  const trainingRate = percent(trainingCompleted, trainingAssigned);
+  const quizPassRate = percent(quizzesPassed, selectedUsers.length);
+  const overallRate = Math.round((policyRate + trainingRate + quizPassRate) / 3);
+  const selectedIds = new Set(selectedUsers.map((user) => user.id));
+  const selectedOverdue = overdueItems
+    .filter((item) => selectedIds.has(item.userId))
+    .map((item) => ({
+      ...item,
+      user: users.find((user) => user.id === item.userId),
+      daysOverdue: Math.max(1, Math.ceil((Date.now() - new Date(`${item.dueDate}T23:59:59Z`).getTime()) / 86400000))
+    }));
+
+  const departments = [...new Set(selectedUsers.map((user) => user.department))].map((name) => {
+    const members = selectedUsers.filter((user) => user.department === name);
+    const assignedPolicies = members.reduce((sum, user) => sum + user.policiesAssigned, 0);
+    const acknowledgedPolicies = members.reduce((sum, user) => sum + user.policiesAcknowledged, 0);
+    const assignedTraining = members.reduce((sum, user) => sum + user.trainingAssigned, 0);
+    const completedTraining = members.reduce((sum, user) => sum + user.trainingCompleted, 0);
+    const departmentPolicyRate = percent(acknowledgedPolicies, assignedPolicies);
+    const departmentTrainingRate = percent(completedTraining, assignedTraining);
+    const departmentQuizRate = percent(members.filter((user) => user.quizScore >= 70).length, members.length);
+    return {
+      name,
+      employees: members.length,
+      policyRate: departmentPolicyRate,
+      trainingRate: departmentTrainingRate,
+      overallRate: Math.round((departmentPolicyRate + departmentTrainingRate + departmentQuizRate) / 3)
+    };
+  });
+
+  const risks = { low: 0, medium: 0, high: 0 };
+  selectedUsers.forEach((user) => { risks[riskFor(user)] += 1; });
+  const periodValues = trendByPeriod[period] || trendByPeriod[30];
+  const trend = periodValues.map((value, index) => ({
+    label: `W${index + 1}`,
+    value: department === "All" ? value : Math.max(45, Math.min(99, value + overallRate - periodValues.at(-1)))
+  }));
+
+  return {
+    filters: { department, period, departments: ["All", ...new Set(users.map((user) => user.department))] },
+    summary: {
+      overallRate,
+      policyRate,
+      trainingRate,
+      quizPassRate,
+      overdueCount: selectedOverdue.length,
+      highRiskCount: risks.high,
+      employees: selectedUsers.length,
+      unreadNotifications: notifications.filter((notification) => !notification.read).length
+    },
+    trend,
+    departments,
+    risks,
+    overdue: selectedOverdue,
+    activity: auditEvents.slice(0, 6),
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+function reportRows(type, department = "All") {
+  const selectedUsers = filteredUsers(department);
+  if (type === "executive") {
+    return buildDashboard(department).departments.map((item) => ({
+      department: item.name,
+      employees: item.employees,
+      policyCompliance: `${item.policyRate}%`,
+      trainingCompletion: `${item.trainingRate}%`,
+      overallCompliance: `${item.overallRate}%`
+    }));
+  }
+  if (type === "policy") {
+    return selectedUsers.map((user) => ({
+      employee: user.name,
+      department: user.department,
+      assigned: user.policiesAssigned,
+      acknowledged: user.policiesAcknowledged,
+      compliance: `${percent(user.policiesAcknowledged, user.policiesAssigned)}%`,
+      status: user.policiesAcknowledged === user.policiesAssigned ? "Compliant" : "Action required"
+    }));
+  }
+  if (type === "training") {
+    return selectedUsers.map((user) => ({
+      employee: user.name,
+      department: user.department,
+      assigned: user.trainingAssigned,
+      completed: user.trainingCompleted,
+      quizScore: `${user.quizScore}%`,
+      status: user.trainingCompleted === user.trainingAssigned && user.quizScore >= 70 ? "Completed" : "Action required"
+    }));
+  }
+  return selectedUsers.map((user) => ({
+    employee: user.name,
+    department: user.department,
+    role: user.role,
+    policyRate: `${percent(user.policiesAcknowledged, user.policiesAssigned)}%`,
+    trainingRate: `${percent(user.trainingCompleted, user.trainingAssigned)}%`,
+    quizScore: `${user.quizScore}%`,
+    risk: riskFor(user)
+  }));
+}
+
+function csvCell(value) {
+  let text = String(value ?? "");
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function toCsv(rows) {
+  if (!rows.length) return "No data\n";
+  const headers = Object.keys(rows[0]);
+  return [headers.map(csvCell).join(","), ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(","))].join("\n");
+}
+
+function policyById(id) {
+  return policies.find((policy) => policy.id === Number(id));
+}
+
+function policyMatches(user, assignment) {
+  if (assignment.targetType === "department") return user.department === assignment.targetValue;
+  if (assignment.targetType === "role") return user.role === assignment.targetValue;
+  return user.username === assignment.targetValue;
+}
+
+function acknowledgementFor(userId, policy) {
+  return acknowledgements.find((ack) => ack.userId === userId && ack.policyId === policy.id && ack.policyVersion === policy.version);
+}
+
+function policyStats(policy) {
+  return {
+    ...policy,
+    assignmentCount: policyAssignments.filter((assignment) => assignment.policyId === policy.id).length,
+    acknowledgementCount: acknowledgements.filter((ack) => ack.policyId === policy.id && ack.policyVersion === policy.version).length
+  };
+}
+
+function policyComplianceRows() {
+  return policyAssignments.flatMap((assignment) => users
+    .filter((user) => policyMatches(user, assignment))
+    .map((user) => {
+      const policy = policyById(assignment.policyId);
+      const acknowledgement = acknowledgementFor(user.id, policy);
+      const overdue = assignment.dueDate && new Date(`${assignment.dueDate}T23:59:59Z`) < new Date();
+      return {
+        assignmentId: assignment.id,
+        employee: user.name,
+        department: user.department,
+        role: user.role,
+        policy: policy.title,
+        version: policy.version,
+        category: policy.category,
+        dueDate: assignment.dueDate,
+        status: acknowledgement ? "complete" : overdue ? "overdue" : "pending",
+        acknowledgedAt: acknowledgement?.acknowledgedAt ?? null
+      };
+    }));
+}
+
+function assignedPoliciesFor(user) {
+  return policyAssignments
+    .filter((assignment) => policyMatches(user, assignment))
+    .map((assignment) => {
+      const policy = policyById(assignment.policyId);
+      return { ...assignment, policy: policyStats(policy), acknowledgement: acknowledgementFor(user.id, policy) || null };
+    });
+}
+
+function policyOverview() {
+  const rows = policyComplianceRows();
+  const complete = rows.filter((row) => row.status === "complete").length;
+  return {
+    summary: {
+      policies: policies.length,
+      publishedPolicies: policies.filter((policy) => policy.status === "published").length,
+      assignments: policyAssignments.length,
+      acknowledgements: acknowledgements.length,
+      complianceRate: percent(complete, rows.length),
+      overdue: rows.filter((row) => row.status === "overdue").length
+    },
+    policies: policies.map(policyStats),
+    assignments: policyAssignments.map((assignment) => ({ ...assignment, policy: policyById(assignment.policyId) })),
+    complianceRows: rows,
+    acknowledgements: acknowledgements.map((ack) => ({ ...ack, user: users.find((user) => user.id === ack.userId), policy: policyById(ack.policyId) })),
+    employee: users.find((user) => user.username === "isuru.contractor"),
+    researchBasis: [
+      { source: "NIST SP 800-12", use: "Uses signed acknowledgement as evidence that personnel read and understood current requirements." },
+      { source: "NIST CSF 2.0 GV.PO", use: "Keeps policy governance visible through ownership, publication state and review evidence." },
+      { source: "ISO/IEC 27002 policy practice", use: "Separates draft, published and archived policy states with controlled assignment." },
+      { source: "OWASP ASVS", use: "Performs acknowledgement eligibility and version checks on the server." }
+    ]
+  };
+}
 
 function contentType(filePath) {
   if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
   if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
+  if (filePath.endsWith(".svg")) return "image/svg+xml";
   return "application/octet-stream";
 }
 
+function securityHeaders(contentTypeValue) {
+  return {
+    "content-type": contentTypeValue,
+    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "no-referrer",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()"
+  };
+}
+
+function sendJson(response, status, payload) {
+  response.writeHead(status, securityHeaders("application/json; charset=utf-8"));
+  response.end(JSON.stringify(payload));
+}
+
+async function readJson(request) {
+  let body = "";
+  for await (const chunk of request) {
+    body += chunk;
+    if (body.length > 100_000) throw new Error("Request body is too large");
+  }
+  if (!body) return {};
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error("Invalid JSON body");
+  }
+}
+
 function serveFile(response, requestPath) {
-  const resolved = path.normalize(path.join(publicDir, requestPath === "/" ? "index.html" : requestPath));
-  if (!resolved.startsWith(publicDir)) {
-    response.writeHead(404);
+  const safeRequestPath = requestPath === "/" ? "index.html" : requestPath.replace(/^\/+/, "");
+  const resolved = path.resolve(publicDir, safeRequestPath);
+  const relative = path.relative(publicDir, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    response.writeHead(404, securityHeaders("text/plain; charset=utf-8"));
     response.end("Not found");
     return;
   }
-  const filePath = fs.existsSync(resolved) && fs.statSync(resolved).isFile()
-    ? resolved
-    : path.join(publicDir, "index.html");
-  response.writeHead(200, {
-    "content-type": contentType(filePath),
-    "x-content-type-options": "nosniff",
-    "referrer-policy": "no-referrer"
-  });
+  const filePath = fs.existsSync(resolved) && fs.statSync(resolved).isFile() ? resolved : path.join(publicDir, "index.html");
+  response.writeHead(200, securityHeaders(contentType(filePath)));
   fs.createReadStream(filePath).pipe(response);
 }
 
-const server = http.createServer((request, response) => {
-  const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
-  if (url.pathname === "/api/health") {
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ ok: true }));
-    return;
-  }
-  if (url.pathname.startsWith("/api/")) {
-    handleApi(request, response, url).catch(() => json(response, 500, { message: "Server error" }));
-    return;
-  }
-  serveFile(response, url.pathname);
-});
-
 async function handleApi(request, response, url) {
-  if (request.method === "GET" && url.pathname === "/api/dashboard") {
-    json(response, 200, dashboard());
-    return;
+  const { pathname, searchParams } = url;
+
+  if (request.method === "GET" && pathname === "/api/health") {
+    sendJson(response, 200, { ok: true });
+    return true;
   }
-  if (request.method === "GET" && url.pathname === "/api/users") {
-    json(response, 200, { users });
-    return;
+  if (request.method === "GET" && pathname === "/api/compliance/dashboard") {
+    sendJson(response, 200, buildDashboard(searchParams.get("department") || "All", Number(searchParams.get("period") || 30)));
+    return true;
   }
-  if (request.method === "GET" && url.pathname === "/api/research-basis") {
-    json(response, 200, { researchBasis });
-    return;
+  if (request.method === "GET" && pathname === "/api/policy/overview") {
+    sendJson(response, 200, policyOverview());
+    return true;
   }
-  if (request.method === "GET" && url.pathname === "/api/audit-events") {
-    json(response, 200, { auditEvents: auditEvents.slice(-25).reverse() });
-    return;
+  if (request.method === "GET" && pathname === "/api/policy/policies") {
+    const status = searchParams.get("status");
+    const rows = status ? policies.filter((policy) => policy.status === status) : policies;
+    sendJson(response, 200, { policies: rows.map(policyStats) });
+    return true;
   }
-  if (request.method === "GET" && url.pathname === "/api/compliance/policies") {
-    json(response, 200, { rows: complianceRows() });
-    return;
-  }
-  if (request.method === "GET" && url.pathname === "/api/policies") {
-    const status = url.searchParams.get("status");
-    const category = url.searchParams.get("category");
-    let rows = policies;
-    if (status) rows = rows.filter((policy) => policy.status === status);
-    if (category) rows = rows.filter((policy) => policy.category === category);
-    json(response, 200, { policies: rows.map(withPolicyStats) });
-    return;
-  }
-  if (request.method === "POST" && url.pathname === "/api/policies") {
+  if (request.method === "POST" && pathname === "/api/policy/policies") {
     const body = await readJson(request);
-    if (!body.title || !body.content) return json(response, 400, { message: "Title and content are required." });
+    if (!body.title || !body.content) {
+      sendJson(response, 400, { message: "Title and content are required." });
+      return true;
+    }
     const policy = {
       id: nextPolicyId++,
       title: String(body.title).trim(),
@@ -157,178 +434,151 @@ async function handleApi(request, response, url) {
       content: String(body.content).trim()
     };
     policies.push(policy);
-    recordAudit("policy.admin", "policy_created", `${policy.title} v${policy.version}`);
-    json(response, 201, { policy: withPolicyStats(policy) });
-    return;
+    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: "policy.admin", action: "POLICY_CREATED", target: `${policy.title} v${policy.version}`, createdAt: new Date().toISOString() });
+    sendJson(response, 201, { policy: policyStats(policy) });
+    return true;
   }
-  const policyMatch = url.pathname.match(/^\/api\/policies\/(\d+)$/);
-  if (request.method === "PATCH" && policyMatch) {
-    const policy = policies.find((item) => item.id === Number(policyMatch[1]));
-    if (!policy) return json(response, 404, { message: "Policy not found." });
-    Object.assign(policy, pick(await readJson(request), ["title", "category", "version", "owner", "effectiveDate", "summary", "content"]));
-    json(response, 200, { policy: withPolicyStats(policy) });
-    return;
-  }
-  const actionMatch = url.pathname.match(/^\/api\/policies\/(\d+)\/(publish|archive)$/);
-  if (request.method === "POST" && actionMatch) {
-    const policy = policies.find((item) => item.id === Number(actionMatch[1]));
-    if (!policy) return json(response, 404, { message: "Policy not found." });
-    policy.status = actionMatch[2] === "publish" ? "published" : "archived";
+  const policyActionMatch = pathname.match(/^\/api\/policy\/policies\/(\d+)\/(publish|archive)$/);
+  if (request.method === "POST" && policyActionMatch) {
+    const policy = policyById(policyActionMatch[1]);
+    if (!policy) {
+      sendJson(response, 404, { message: "Policy not found." });
+      return true;
+    }
+    policy.status = policyActionMatch[2] === "publish" ? "published" : "archived";
     if (policy.status === "published" && !policy.effectiveDate) policy.effectiveDate = new Date().toISOString().slice(0, 10);
-    recordAudit("policy.admin", `policy_${policy.status}`, `${policy.title} v${policy.version}`);
-    json(response, 200, { policy: withPolicyStats(policy) });
-    return;
+    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: "policy.admin", action: `POLICY_${policy.status.toUpperCase()}`, target: `${policy.title} v${policy.version}`, createdAt: new Date().toISOString() });
+    sendJson(response, 200, { policy: policyStats(policy) });
+    return true;
   }
-  if (request.method === "GET" && url.pathname === "/api/assignments") {
-    json(response, 200, { assignments: assignments.map(withPolicy) });
-    return;
-  }
-  if (request.method === "POST" && url.pathname === "/api/assignments") {
+  if (request.method === "POST" && pathname === "/api/policy/assignments") {
     const body = await readJson(request);
-    if (!policies.some((policy) => policy.id === Number(body.policyId))) return json(response, 400, { message: "Invalid policy." });
+    if (!policyById(body.policyId)) {
+      sendJson(response, 400, { message: "Valid policy is required." });
+      return true;
+    }
     const assignment = {
-      id: nextAssignmentId++,
+      id: nextPolicyAssignmentId++,
       policyId: Number(body.policyId),
-      targetType: ["role", "department", "user"].includes(body.targetType) ? body.targetType : "role",
-      targetValue: String(body.targetValue || "Employee").trim(),
-      dueDate: String(body.dueDate || ""),
+      targetType: ["department", "role", "user"].includes(body.targetType) ? body.targetType : "department",
+      targetValue: String(body.targetValue || "Consulting").trim(),
+      dueDate: String(body.dueDate || daysFromNow(14)),
       status: "assigned"
     };
-    assignments.push(assignment);
-    recordAudit("policy.admin", "policy_assigned", `${assignment.targetType}:${assignment.targetValue}`);
-    json(response, 201, { assignment: withPolicy(assignment) });
-    return;
+    policyAssignments.push(assignment);
+    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: "policy.admin", action: "POLICY_ASSIGNED", target: `${assignment.targetType}:${assignment.targetValue}`, createdAt: new Date().toISOString() });
+    sendJson(response, 201, { assignment: { ...assignment, policy: policyById(assignment.policyId) } });
+    return true;
   }
-  if (request.method === "GET" && url.pathname === "/api/acknowledgements") {
-    json(response, 200, { acknowledgements: acknowledgements.map(withAcknowledgementDetails) });
-    return;
-  }
-  const ackMatch = url.pathname.match(/^\/api\/policies\/(\d+)\/acknowledge$/);
-  if (request.method === "POST" && ackMatch) {
-    const policy = policies.find((item) => item.id === Number(ackMatch[1]));
-    if (!policy || policy.status !== "published") return json(response, 400, { message: "Only published policies can be acknowledged." });
+  const acknowledgeMatch = pathname.match(/^\/api\/policy\/policies\/(\d+)\/acknowledge$/);
+  if (request.method === "POST" && acknowledgeMatch) {
+    const policy = policyById(acknowledgeMatch[1]);
+    if (!policy || policy.status !== "published") {
+      sendJson(response, 400, { message: "Only published policies can be acknowledged." });
+      return true;
+    }
     const body = await readJson(request);
-    const user = users.find((item) => item.username === body.username) || users[1];
-    if (!isAssignedTo(user, policy.id)) return json(response, 403, { message: "Policy is not assigned to this user." });
-    const existing = acknowledgements.find((item) => item.userId === user.id && item.policyId === policy.id && item.policyVersion === policy.version);
-    if (existing) return json(response, 200, { acknowledgement: withAcknowledgementDetails(existing) });
+    const user = users.find((entry) => entry.id === Number(body.userId)) || users.find((entry) => entry.username === body.username) || users[0];
+    if (!assignedPoliciesFor(user).some((entry) => entry.policy.id === policy.id)) {
+      sendJson(response, 403, { message: "Policy is not assigned to this user." });
+      return true;
+    }
+    const existing = acknowledgementFor(user.id, policy);
+    if (existing) {
+      sendJson(response, 200, { acknowledgement: existing });
+      return true;
+    }
     const acknowledgement = {
       id: nextAcknowledgementId++,
       policyId: policy.id,
       policyVersion: policy.version,
       userId: user.id,
-      acknowledgedAt: new Date().toISOString(),
-      statement: String(body.statement || "I have read and understood this policy.")
+      statement: String(body.statement || "I have read and understood this policy."),
+      acknowledgedAt: new Date().toISOString()
     };
     acknowledgements.push(acknowledgement);
-    recordAudit(user.username, "policy_acknowledged", `${policy.title} v${policy.version}`);
-    json(response, 201, { acknowledgement: withAcknowledgementDetails(acknowledgement) });
-    return;
+    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: user.username, action: "POLICY_ACKNOWLEDGED", target: `${policy.title} v${policy.version}`, createdAt: acknowledgement.acknowledgedAt });
+    sendJson(response, 201, { acknowledgement });
+    return true;
   }
-  if (request.method === "GET" && url.pathname === "/api/employee/policies") {
-    const username = url.searchParams.get("username") || "finance.analyst01";
-    const user = users.find((item) => item.username === username) || users[1];
-    json(response, 200, { user, assignedPolicies: assignedPoliciesFor(user) });
-    return;
+  if (request.method === "GET" && pathname === "/api/reports") {
+    const type = searchParams.get("type") || "executive";
+    const department = searchParams.get("department") || "All";
+    const titles = { executive: "Executive Compliance Summary", policy: "Policy Acknowledgement Report", training: "Training and Quiz Report", risk: "Employee Risk Review" };
+    sendJson(response, 200, { title: titles[type] || titles.executive, type, department, generatedAt: new Date().toISOString(), rows: reportRows(type, department) });
+    return true;
   }
-  json(response, 404, { message: "Not found" });
+  if (request.method === "GET" && pathname === "/api/reports/export") {
+    const type = searchParams.get("type") || "executive";
+    const department = searchParams.get("department") || "All";
+    response.writeHead(200, { ...securityHeaders("text/csv; charset=utf-8"), "content-disposition": `attachment; filename="secureaware-${type}-report.csv"` });
+    response.end(toCsv(reportRows(type, department)));
+    return true;
+  }
+  if (request.method === "GET" && pathname === "/api/notifications") {
+    sendJson(response, 200, { notifications: notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), unreadCount: notifications.filter((notification) => !notification.read).length, settings: notificationSettings });
+    return true;
+  }
+  if (request.method === "POST" && /^\/api\/notifications\/\d+\/read$/.test(pathname)) {
+    const notification = notifications.find((item) => item.id === Number(pathname.split("/")[3]));
+    if (!notification) {
+      sendJson(response, 404, { message: "Notification not found" });
+      return true;
+    }
+    notification.read = true;
+    sendJson(response, 200, { notification });
+    return true;
+  }
+  if (request.method === "POST" && pathname === "/api/notifications/read-all") {
+    notifications.forEach((notification) => { notification.read = true; });
+    sendJson(response, 200, { ok: true });
+    return true;
+  }
+  if (request.method === "PATCH" && pathname === "/api/notification-settings") {
+    const body = await readJson(request);
+    for (const key of Object.keys(notificationSettings)) if (typeof body[key] === "boolean") notificationSettings[key] = body[key];
+    sendJson(response, 200, { settings: notificationSettings });
+    return true;
+  }
+  if (request.method === "POST" && pathname === "/api/reminders") {
+    const body = await readJson(request);
+    const item = overdueItems.find((entry) => entry.id === Number(body.itemId));
+    if (!item) {
+      sendJson(response, 404, { message: "Compliance item not found" });
+      return true;
+    }
+    const user = users.find((entry) => entry.id === item.userId);
+    item.reminderSent = true;
+    const notification = { id: Math.max(0, ...notifications.map((entry) => entry.id)) + 1, type: "reminder", title: "Reminder sent", message: `${item.title} reminder sent to ${user.name}.`, createdAt: new Date().toISOString(), read: false };
+    notifications = [notification, ...notifications];
+    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: "compliance.admin", action: "REMINDER_SENT", target: `${item.title} - ${user.name}`, createdAt: new Date().toISOString() });
+    sendJson(response, 201, { notification, item });
+    return true;
+  }
+  if (pathname.startsWith("/api/")) {
+    sendJson(response, 404, { message: "API endpoint not found" });
+    return true;
+  }
+  return false;
 }
 
-function dashboard() {
-  const assigned = assignedPoliciesFor(users[1]);
-  const rows = complianceRows();
-  const complete = rows.filter((row) => row.status === "complete").length;
-  return {
-    policies: policies.length,
-    publishedPolicies: policies.filter((policy) => policy.status === "published").length,
-    assignments: assignments.length,
-    acknowledgements: acknowledgements.length,
-    complianceRate: rows.length ? Math.round((complete / rows.length) * 100) : 0,
-    employeePending: assigned.filter((item) => !item.acknowledgement).length,
-    overdueAssignments: rows.filter((row) => row.status === "overdue").length
-  };
-}
-
-function complianceRows() {
-  return assignments.flatMap((assignment) => users
-    .filter((user) => matchesAssignment(user, assignment))
-    .map((user) => {
-      const policy = policies.find((item) => item.id === assignment.policyId);
-      const acknowledgement = acknowledgements.find((item) => item.userId === user.id && item.policyId === policy.id && item.policyVersion === policy.version);
-      const overdue = assignment.dueDate && new Date(`${assignment.dueDate}T23:59:59.000Z`) < new Date();
-      return {
-        user: { username: user.username, name: user.name, department: user.department, role: user.role },
-        policy: { id: policy.id, title: policy.title, version: policy.version, category: policy.category },
-        dueDate: assignment.dueDate,
-        status: acknowledgement ? "complete" : overdue ? "overdue" : "pending",
-        acknowledgedAt: acknowledgement?.acknowledgedAt ?? null
-      };
-    }));
-}
-
-function assignedPoliciesFor(user) {
-  return assignments
-    .filter((assignment) => matchesAssignment(user, assignment))
-    .map((assignment) => {
-      const policy = policies.find((item) => item.id === assignment.policyId);
-      const acknowledgement = acknowledgements.find((item) => item.userId === user.id && item.policyId === policy.id && item.policyVersion === policy.version);
-      return { ...assignment, policy: withPolicyStats(policy), acknowledgement: acknowledgement ? withAcknowledgementDetails(acknowledgement) : null };
-    });
-}
-
-function isAssignedTo(user, policyId) {
-  return assignments.some((assignment) => {
-    if (assignment.policyId !== policyId) return false;
-    return matchesAssignment(user, assignment);
-  });
-}
-
-function matchesAssignment(user, assignment) {
-  if (assignment.targetType === "role") return assignment.targetValue === user.role;
-  if (assignment.targetType === "department") return assignment.targetValue === user.department;
-  return assignment.targetValue === user.username;
-}
-
-function withPolicyStats(policy) {
-  const policyAssignments = assignments.filter((assignment) => assignment.policyId === policy.id);
-  const policyAcknowledgements = acknowledgements.filter((acknowledgement) => acknowledgement.policyId === policy.id && acknowledgement.policyVersion === policy.version);
-  return { ...policy, assignmentCount: policyAssignments.length, acknowledgementCount: policyAcknowledgements.length };
-}
-
-function withPolicy(assignment) {
-  return { ...assignment, policy: policies.find((policy) => policy.id === assignment.policyId) || null };
-}
-
-function withAcknowledgementDetails(acknowledgement) {
-  const policy = policies.find((item) => item.id === acknowledgement.policyId);
-  const user = users.find((item) => item.id === acknowledgement.userId);
-  return { ...acknowledgement, policy, user };
-}
-
-function pick(body, keys) {
-  return Object.fromEntries(keys.filter((key) => body[key] !== undefined).map((key) => [key, body[key]]));
-}
-
-function recordAudit(actor, action, target) {
-  auditEvents.push({ id: nextAuditId++, actor, action, target, createdAt: new Date().toISOString() });
-}
-
-async function readJson(request) {
-  const chunks = [];
-  for await (const chunk of request) chunks.push(chunk);
-  if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
-function json(response, status, body) {
-  response.writeHead(status, { "content-type": "application/json" });
-  response.end(JSON.stringify(body));
-}
+const server = http.createServer(async (request, response) => {
+  const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
+  try {
+    if (await handleApi(request, response, url)) return;
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      response.writeHead(405, securityHeaders("text/plain; charset=utf-8"));
+      response.end("Method not allowed");
+      return;
+    }
+    serveFile(response, url.pathname);
+  } catch (error) {
+    sendJson(response, 400, { message: error.message || "Request failed" });
+  }
+});
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`SecureAware running at http://127.0.0.1:${port}`);
-  });
+  server.listen(port, "127.0.0.1", () => console.log(`SecureAware running at http://127.0.0.1:${port}`));
 }
 
 export default server;

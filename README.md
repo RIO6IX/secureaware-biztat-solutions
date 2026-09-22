@@ -1,26 +1,28 @@
-# SecureAware - Member 2: Policy Management + Assignment + Acknowledgement
+# SecureAware - Biztat Solutions
 
-This branch implements Sanduni's Member 2 contribution for SecureAware.
+SecureAware is a responsive information-security compliance platform for managing policy acknowledgement, awareness training, reporting and follow-up activity.
 
-## Implemented Scope
+## Capabilities
 
-- Policy creation, editing, publishing and archiving.
-- Policy version and owner metadata.
-- Assignment to users, roles or departments.
-- Employee policy workspace for assigned policies.
-- Policy acknowledgement with timestamp and version evidence.
-- Compliance dashboard showing assigned, acknowledged, pending and overdue policies.
-- Search/filter-friendly tables for policies, assignments and acknowledgement evidence.
-
-## Demo Accounts
-
-- Policy Admin: `policy.admin`
-- Employee: `employee.demo`
-
-This academic prototype keeps data in memory for easy demonstration.
+- policy acknowledgement, training completion and quiz-pass indicators;
+- department filters, trend visualization and risk distribution;
+- complete, incomplete and overdue compliance monitoring;
+- policy, training, executive and risk reports with CSV export;
+- interactive reminders, notification preferences and read status;
+- privacy-aware reporting and auditable compliance activity.
 
 ## Run
 
 ```bash
 npm run dev
 ```
+
+Open `http://127.0.0.1:4000`.
+
+Run the automated checks with:
+
+```bash
+npm test
+```
+
+No external npm packages are required.
