@@ -1,26 +1,28 @@
-# SecureAware - Member 3: Security Training + Quiz & Assessment
+# SecureAware - Biztat Solutions
 
-This branch implements the Member 3 contribution for SecureAware.
+SecureAware is a responsive information-security compliance platform for managing policy acknowledgement, awareness training, reporting and follow-up activity.
 
-## Implemented Scope
+## Capabilities
 
-- Security awareness training module management.
-- Training assignment to roles/departments/users for demo use.
-- Quiz creation with multiple-choice questions.
-- Quiz attempt/submission with automatic scoring.
-- Result records, pass/fail status and completion tracking.
-- Training dashboard with completion and assessment summaries.
-- Demo employee view for assigned training and quiz attempts.
-
-## Demo Accounts
-
-- Admin: `training.admin`
-- Employee: `employee.demo`
-
-This academic prototype keeps data in memory for easy demonstration.
+- policy acknowledgement, training completion and quiz-pass indicators;
+- department filters, trend visualization and risk distribution;
+- complete, incomplete and overdue compliance monitoring;
+- policy, training, executive and risk reports with CSV export;
+- interactive reminders, notification preferences and read status;
+- privacy-aware reporting and auditable compliance activity.
 
 ## Run
 
 ```bash
 npm run dev
 ```
+
+Open `http://127.0.0.1:4000`.
+
+Run the automated checks with:
+
+```bash
+npm test
+```
+
+No external npm packages are required.
