@@ -69,6 +69,11 @@ const trainingModules = [
     owner: "Information Security",
     status: "active",
     summary: "Recognise social engineering indicators, verify requests through trusted channels and report suspicious messages.",
+    lessons: [
+      { title: "Inspect before you click", body: "Phishing relies on urgency, spoofed senders, unusual links and unexpected attachments. Check the sender domain, link destination and context before opening a file or approving a request." },
+      { title: "Verify sensitive requests", body: "For money transfers, credential requests, client files or system access, verify through a known separate channel. Do not trust a reply inside the suspicious thread." },
+      { title: "Report quickly", body: "Reporting helps the organisation block malicious domains, alert other users and preserve evidence. Do not hide or delete a suspicious message until the reporting process is complete." }
+    ],
     quiz: {
       passMark: 75,
       maxAttempts: 3,
@@ -87,6 +92,11 @@ const trainingModules = [
     owner: "IT Security",
     status: "active",
     summary: "Use unique credentials, approved password managers and report unexpected MFA approval prompts.",
+    lessons: [
+      { title: "Use unique credentials", body: "A password reused across services can expose business systems after a personal account breach. Use the approved password manager to generate and store unique passwords." },
+      { title: "MFA is a warning system too", body: "Unexpected MFA prompts may mean someone has your password. Deny the prompt, change the password through the approved process and report the incident." },
+      { title: "Protect recovery methods", body: "Recovery email, backup codes and phone numbers can unlock accounts. Keep them protected and never share one-time codes with another person." }
+    ],
     quiz: {
       passMark: 70,
       maxAttempts: 3,
@@ -104,6 +114,11 @@ const trainingModules = [
     owner: "Compliance",
     status: "active",
     summary: "Classify, store and share client data through approved systems using least-privilege access.",
+    lessons: [
+      { title: "Classify before sharing", body: "Client and business data should be handled according to its sensitivity. Classification tells employees where data may be stored, who may access it and how it may be shared." },
+      { title: "Use approved repositories", body: "Store restricted files in company-approved systems that support access control, audit records and retention rules. Personal drives and unlabelled removable media create avoidable risk." },
+      { title: "Share by need-to-know", body: "Before sending information, confirm the recipient needs it for their role and that the channel is approved for that data type." }
+    ],
     quiz: {
       passMark: 80,
       maxAttempts: 2,
@@ -121,6 +136,11 @@ const trainingModules = [
     owner: "Engineering Security",
     status: "draft",
     summary: "Introduces input validation, secure error handling, dependency awareness and safe code review routines.",
+    lessons: [
+      { title: "Validate at trust boundaries", body: "Applications must validate untrusted input on the server and use client-side validation only to improve usability. Never rely only on browser checks." },
+      { title: "Handle errors safely", body: "Errors should help users recover without exposing stack traces, secrets, queries or infrastructure details." },
+      { title: "Review dependencies", body: "Dependency and release checks reduce known-vulnerability risk. Teams should review package updates, advisories and build outputs before production release." }
+    ],
     quiz: {
       passMark: 75,
       maxAttempts: 3,

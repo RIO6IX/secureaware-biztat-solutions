@@ -79,6 +79,7 @@ test("training module supports creation, assignment and server-scored quiz attem
   assert.ok(overview.complianceRows.length > 0);
   assert.ok(overview.researchBasis.some((item) => item.source.includes("NIST")));
   assert.ok(overview.results.every((result) => result.score >= 0 && result.score <= 100));
+  assert.ok(overview.modules.every((module) => module.lessons.length >= 3));
 
   const moduleResponse = await fetch(`${baseUrl}/api/training/modules`, {
     method: "POST",
