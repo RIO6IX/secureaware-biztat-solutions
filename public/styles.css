@@ -12,6 +12,25 @@ body {
   margin: 0;
 }
 
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-panel {
+  width: min(480px, 100%);
+  background: #fff;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  padding: 28px;
+}
+
+.login-panel h1 {
+  margin: 0 0 8px;
+}
+
 button,
 input,
 select,
@@ -148,6 +167,11 @@ label {
   padding: 18px;
 }
 
+.panel {
+  margin-bottom: 18px;
+  overflow-x: auto;
+}
+
 .panel h2,
 .card h3 {
   margin: 0 0 14px;
@@ -182,6 +206,7 @@ label {
 table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 720px;
 }
 
 th,
