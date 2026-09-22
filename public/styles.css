@@ -1543,9 +1543,124 @@ tbody tr:hover {
   color: var(--slate-700);
 }
 
+.course-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
+  gap: 20px;
+}
+
+.course-card {
+  overflow: hidden;
+  display: grid;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+
+.course-media {
+  min-height: 138px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--slate-900);
+}
+
+.course-media span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.course-tone-1 {
+  background: linear-gradient(135deg, #d8f2df, #eef8e8);
+}
+
+.course-tone-2 {
+  background: linear-gradient(135deg, #f8cf80, #fff0bc);
+}
+
+.course-tone-3 {
+  background: linear-gradient(135deg, #f7c0d1, #ffe1e8);
+}
+
+.course-body {
+  display: grid;
+  gap: 15px;
+  padding: 18px;
+}
+
+.course-body h3 {
+  margin: 6px 0 8px;
+  font-size: 17px;
+}
+
+.course-body p {
+  margin: 0;
+  color: var(--slate-500);
+  line-height: 1.55;
+}
+
+.course-body dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.course-body dt {
+  color: var(--slate-500);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.course-body dd {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.lesson-reader {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  background: var(--slate-100);
+}
+
+.lesson-reader h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.lesson-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dce4ef;
+}
+
+.lesson-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue-600);
+}
+
+.lesson-complete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-600);
+  font-weight: 800;
+}
+
 @media (max-width: 570px) {
   .module-form,
-  .module-card dl {
+  .module-card dl,
+  .course-body dl {
     grid-template-columns: 1fr;
   }
 }

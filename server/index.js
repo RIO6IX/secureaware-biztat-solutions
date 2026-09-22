@@ -130,6 +130,20 @@ const learningModules = [
     audience: "All employees",
     source: "CISA Secure Our World",
     summary: "Spot urgent requests, suspicious links, spoofed senders and unusual attachment behaviour before reporting through approved channels.",
+    lessons: [
+      {
+        title: "Pause before acting",
+        body: "Phishing messages often create pressure: urgent payment requests, account warnings, document links, fake delivery notices or unusual requests from someone who appears senior. Slow down and inspect the sender, domain, link destination and context before taking action."
+      },
+      {
+        title: "Verify through a trusted channel",
+        body: "When a message asks for money, credentials, confidential files or system access, verify the request outside the email thread. Use a known phone number, approved chat channel or the service portal rather than replying to the suspicious message."
+      },
+      {
+        title: "Report instead of hiding it",
+        body: "Reporting helps the security team warn others, block malicious links and preserve evidence. Do not forward suspicious content to coworkers unless your organisation's reporting process asks you to do that."
+      }
+    ],
     quiz: {
       passMark: 75,
       questions: [
@@ -147,6 +161,20 @@ const learningModules = [
     audience: "Employees and contractors",
     source: "CISA and NIST guidance",
     summary: "Use unique passphrases, approved password managers and multi-factor authentication, then report unexpected approval prompts.",
+    lessons: [
+      {
+        title: "Use unique credentials",
+        body: "A reused password turns one breached website into a business account breach. Use approved password-manager generated passwords or passphrases so every work system has a different secret."
+      },
+      {
+        title: "Treat MFA prompts as security signals",
+        body: "A surprise MFA prompt can mean someone has your password and is trying to sign in. Deny the prompt, change the affected password through the approved process and report the event."
+      },
+      {
+        title: "Protect recovery paths",
+        body: "Attackers target recovery email, phone numbers and backup codes. Keep recovery information current, store backup codes safely and never share one-time passcodes with anyone."
+      }
+    ],
     quiz: {
       passMark: 70,
       questions: [
@@ -163,6 +191,20 @@ const learningModules = [
     audience: "Policy assignees",
     source: "NIST SP 800-12 and SP 800-50",
     summary: "Understand why current-version policy acknowledgement is evidence, and how training supports policy enforcement.",
+    lessons: [
+      {
+        title: "Read the current version",
+        body: "Policy acknowledgement must connect to the exact policy version shown to the learner. If the policy changes, the new version needs its own acknowledgement evidence."
+      },
+      {
+        title: "Know what you are accepting",
+        body: "Acknowledgement means the user has read, understood and agrees to follow the policy. If the language is unclear, the correct action is to ask the policy owner or manager before acknowledging."
+      },
+      {
+        title: "Training supports policy enforcement",
+        body: "Awareness training explains how to follow policy in daily work. Completion, quiz marks and acknowledgement records give managers evidence for follow-up and improvement."
+      }
+    ],
     quiz: {
       passMark: 80,
       questions: [

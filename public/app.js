@@ -5,7 +5,8 @@ const state = {
   department: "All",
   period: "30",
   reportType: "executive",
-  reportDepartment: "All"
+  reportDepartment: "All",
+  learningProgress: {}
 };
 
 const navItems = [
@@ -489,6 +490,42 @@ async function policiesPage() {
   });
 }
 
+function learningCourseCard(module) {
+  const lessons = module.lessons || [];
+  const currentStep = Math.min(state.learningProgress[module.id] || 0, lessons.length);
+  const lesson = lessons[currentStep];
+  const quizUnlocked = currentStep >= lessons.length;
+  return `
+    <article class="course-card">
+      <div class="course-media course-tone-${module.id}">
+        ${icon(module.id === 1 ? "warning" : module.id === 2 ? "shield" : "policy", 42)}
+        <span>${escapeHtml(module.category)}</span>
+      </div>
+      <div class="course-body">
+        <div><span class="eyebrow">${module.durationMinutes} min · ${escapeHtml(module.audience)}</span><h3>${escapeHtml(module.title)}</h3><p>${escapeHtml(module.summary)}</p></div>
+        <dl><div><dt>Basis</dt><dd>${escapeHtml(module.source)}</dd></div><div><dt>Pass mark</dt><dd>${module.quiz.passMark}%</dd></div><div><dt>Lessons</dt><dd>${lessons.length}</dd></div></dl>
+        ${quizUnlocked ? `
+          <form class="quiz-inline" data-learning-quiz="${module.id}">
+            <div class="lesson-complete">${icon("check", 18)} Training read. Complete the quiz to record your mark.</div>
+            ${module.quiz.questions.map((question, questionIndex) => `
+              <fieldset><legend>${escapeHtml(question.prompt)}</legend>${question.options.map((option) => `<label><input type="radio" name="q${questionIndex}" value="${option.id}" required> ${escapeHtml(option.text)}</label>`).join("")}</fieldset>
+            `).join("")}
+            <button class="button button-primary" type="submit">Submit quiz</button>
+          </form>
+        ` : `
+          <div class="lesson-reader">
+            <div class="lesson-progress"><span style="width:${Math.round(((currentStep + 1) / Math.max(1, lessons.length)) * 100)}%"></span></div>
+            <span class="eyebrow">Lesson ${currentStep + 1} of ${lessons.length}</span>
+            <h4>${escapeHtml(lesson.title)}</h4>
+            <p>${escapeHtml(lesson.body)}</p>
+            <button class="button button-secondary" data-learning-next="${module.id}" type="button">${currentStep + 1 === lessons.length ? "Finish training and unlock quiz" : "Continue training"}</button>
+          </div>
+        `}
+      </div>
+    </article>
+  `;
+}
+
 async function quizzesPage() {
   const data = await api("/api/learning/overview");
   shell(`
@@ -500,20 +537,7 @@ async function quizzesPage() {
       ${metricCard("Completion", `${data.summary.completionRate}%`, "Across all users and modules", "check", "orange")}
     </div>
     ${panel("Training portal", "Complete the training, then answer the quiz below each card", `
-      <div class="module-card-grid">
-        ${data.modules.map((module) => `
-          <article class="module-card training-card">
-            <div><span class="eyebrow">${escapeHtml(module.category)} · ${module.durationMinutes} min</span><h3>${escapeHtml(module.title)}</h3><p>${escapeHtml(module.summary)}</p></div>
-            <dl><div><dt>Audience</dt><dd>${escapeHtml(module.audience)}</dd></div><div><dt>Basis</dt><dd>${escapeHtml(module.source)}</dd></div><div><dt>Pass mark</dt><dd>${module.quiz.passMark}%</dd></div></dl>
-            <form class="quiz-inline" data-learning-quiz="${module.id}">
-              ${module.quiz.questions.map((question, questionIndex) => `
-                <fieldset><legend>${escapeHtml(question.prompt)}</legend>${question.options.map((option) => `<label><input type="radio" name="q${questionIndex}" value="${option.id}" required> ${escapeHtml(option.text)}</label>`).join("")}</fieldset>
-              `).join("")}
-              <button class="button button-primary" type="submit">Submit quiz as demo user</button>
-            </form>
-          </article>
-        `).join("")}
-      </div>
+      <div class="course-grid">${data.modules.map(learningCourseCard).join("")}</div>
     `, "full-panel")}
     <div class="dashboard-grid">
       ${panel("Who completed what", "Marks and status by employee, department and training module", reportTable(data.rows))}
@@ -529,6 +553,13 @@ async function quizzesPage() {
     }))), "full-panel")}
   `, data.summary.unreadNotifications || 0);
 
+  document.querySelectorAll("[data-learning-next]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const moduleId = Number(button.dataset.learningNext);
+      state.learningProgress[moduleId] = (state.learningProgress[moduleId] || 0) + 1;
+      quizzesPage();
+    });
+  });
   document.querySelectorAll("[data-learning-quiz]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
