@@ -84,7 +84,7 @@ function relativeTime(value) {
 function pageMeta() {
   return {
     overview: ["Compliance overview", "Monitor policy awareness, training progress and emerging risk."],
-    compliance: ["Compliance workspace", "Review department performance and follow up on overdue actions."],
+    compliance: ["Compliance management", "Review department performance and follow up on overdue actions."],
     reports: ["Reports and exports", "Generate role-appropriate summaries from approved compliance data."],
     notifications: ["Notifications", "Manage reminders and stay informed about important compliance changes."]
   }[state.route];
@@ -99,7 +99,7 @@ function shell(content, unreadCount = 0) {
           <div class="brand-mark">S</div>
           <div><strong>SecureAware</strong><span>Biztat Solutions</span></div>
         </div>
-        <div class="sidebar-label">Workspace</div>
+        <div class="sidebar-label">Management</div>
         <nav aria-label="Primary navigation">
           ${navItems.map(([route, label, iconName]) => `
             <button class="nav-item ${state.route === route ? "active" : ""}" data-route="${route}" ${state.route === route ? 'aria-current="page"' : ""}>
@@ -108,8 +108,8 @@ function shell(content, unreadCount = 0) {
           `).join("")}
         </nav>
         <div class="sidebar-footer">
-          <div class="privacy-badge">${icon("shield", 18)}<div><strong>Academic prototype</strong><span>Dummy data only</span></div></div>
-          <div class="member-tag">Member 4 workspace</div>
+          <div class="privacy-badge">${icon("shield", 18)}<div><strong>Protected environment</strong><span>Authorized access only</span></div></div>
+          <div class="member-tag"><span class="status-indicator"></span>System operational</div>
         </div>
       </aside>
       <main class="main">
@@ -301,7 +301,7 @@ async function overviewPage() {
       `)}
     </div>
     ${panel("Priority follow-up", "Overdue items requiring authorized action", overdueTable(data.overdue), "full-panel")}
-    <p class="updated-time">${icon("refresh", 14)} Updated ${formatDateTime(data.lastUpdated)} · Academic prototype using fictional records</p>
+    <p class="updated-time">${icon("refresh", 14)} Data refreshed ${formatDateTime(data.lastUpdated)}</p>
   `, data.summary.unreadNotifications);
   bindDashboardControls();
   bindOverdueActions();
@@ -349,7 +349,7 @@ async function compliancePage() {
     api(`/api/reports?type=risk&department=${encodeURIComponent(state.department)}`)
   ]);
   shell(`
-    <div class="section-heading"><div><span class="eyebrow">FR-13 and FR-14</span><h1>Compliance monitoring</h1><p>Derived from acknowledgements, deadlines, training completion and quiz outcomes.</p></div><label class="compact-filter"><span>Department</span><select id="departmentFilter">${data.filters.departments.map((department) => `<option ${department === state.department ? "selected" : ""}>${escapeHtml(department)}</option>`).join("")}</select></label></div>
+    <div class="section-heading"><div><span class="eyebrow">Control assurance</span><h1>Compliance monitoring</h1><p>Consolidated insight across acknowledgements, deadlines, training completion and quiz outcomes.</p></div><label class="compact-filter"><span>Department</span><select id="departmentFilter">${data.filters.departments.map((department) => `<option ${department === state.department ? "selected" : ""}>${escapeHtml(department)}</option>`).join("")}</select></label></div>
     <div class="metric-grid compact-metrics">
       ${metricCard("Policy compliance", `${data.summary.policyRate}%`, "Acknowledged current versions", "policy", "purple")}
       ${metricCard("Training completion", `${data.summary.trainingRate}%`, "Completed assigned modules", "training", "green")}
@@ -384,14 +384,14 @@ async function reportsPage() {
     api(`/api/reports?type=${state.reportType}&department=${encodeURIComponent(state.reportDepartment)}`)
   ]);
   shell(`
-    <div class="section-heading"><div><span class="eyebrow">FR-15</span><h1>Compliance reports</h1><p>Generate filtered evidence using approved criteria and dummy employee records.</p></div></div>
+    <div class="section-heading"><div><span class="eyebrow">Analytics and exports</span><h1>Compliance reports</h1><p>Generate decision-ready evidence using approved reporting criteria and access controls.</p></div></div>
     <section class="report-controls panel">
       <label><span>Report</span><select id="reportType"><option value="executive" ${state.reportType === "executive" ? "selected" : ""}>Executive summary</option><option value="policy" ${state.reportType === "policy" ? "selected" : ""}>Policy acknowledgement</option><option value="training" ${state.reportType === "training" ? "selected" : ""}>Training and quiz</option><option value="risk" ${state.reportType === "risk" ? "selected" : ""}>Employee risk review</option></select></label>
       <label><span>Department</span><select id="reportDepartment">${dashboard.filters.departments.map((department) => `<option ${department === state.reportDepartment ? "selected" : ""}>${escapeHtml(department)}</option>`).join("")}</select></label>
       <div class="report-actions"><button class="button button-secondary" id="printReport">Print preview</button><button class="button button-primary" id="exportReport">${icon("download", 18)}Export CSV</button></div>
     </section>
     ${panel(report.title, `${report.department} scope · Generated ${formatDateTime(report.generatedAt)}`, reportTable(report.rows), "report-panel")}
-    <div class="privacy-note">${icon("shield", 18)}<div><strong>Privacy-aware reporting</strong><span>Exports contain only authorized fictional data. Spreadsheet-formula injection is neutralized by the server.</span></div></div>
+    <div class="privacy-note">${icon("shield", 18)}<div><strong>Privacy-aware reporting</strong><span>Exports are limited to authorized compliance data and protected against spreadsheet-formula injection.</span></div></div>
   `, dashboard.summary.unreadNotifications);
   document.getElementById("reportType").addEventListener("change", (event) => { state.reportType = event.target.value; render(); });
   document.getElementById("reportDepartment").addEventListener("change", (event) => { state.reportDepartment = event.target.value; render(); });
@@ -405,7 +405,7 @@ async function reportsPage() {
 async function notificationsPage() {
   const [data, dashboard] = await Promise.all([api("/api/notifications"), api("/api/compliance/dashboard")]);
   shell(`
-    <div class="section-heading"><div><span class="eyebrow">FR-16</span><h1>Notification centre</h1><p>Manage new, upcoming and overdue activity reminders.</p></div>${data.unreadCount ? `<button class="button button-secondary" id="markAllRead">${icon("check", 17)}Mark all as read</button>` : ""}</div>
+    <div class="section-heading"><div><span class="eyebrow">Alert management</span><h1>Notification centre</h1><p>Manage new, upcoming and overdue compliance activity reminders.</p></div>${data.unreadCount ? `<button class="button button-secondary" id="markAllRead">${icon("check", 17)}Mark all as read</button>` : ""}</div>
     <div class="notification-layout">
       ${panel("Recent notifications", `${data.unreadCount} unread notification${data.unreadCount === 1 ? "" : "s"}`, `
         <div class="notification-list">
@@ -454,7 +454,7 @@ async function render() {
     if (state.route === "notifications") return await notificationsPage();
     return await overviewPage();
   } catch (error) {
-    shell(`<div class="error-state">${icon("warning", 32)}<h1>Unable to load this workspace</h1><p>${escapeHtml(error.message)}</p><button class="button button-primary" id="retryButton">Try again</button></div>`);
+    shell(`<div class="error-state">${icon("warning", 32)}<h1>Unable to load the dashboard</h1><p>${escapeHtml(error.message)}</p><button class="button button-primary" id="retryButton">Try again</button></div>`);
     document.getElementById("retryButton")?.addEventListener("click", render);
   }
 }
