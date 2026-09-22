@@ -1516,6 +1516,33 @@ tbody tr:hover {
   font-weight: 800;
 }
 
+.training-card {
+  align-content: start;
+}
+
+.quiz-inline {
+  display: grid;
+  gap: 13px;
+}
+
+.quiz-inline fieldset {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+}
+
+.quiz-inline legend {
+  padding: 0 4px;
+  font-weight: 800;
+}
+
+.quiz-inline label {
+  color: var(--slate-700);
+}
+
 @media (max-width: 570px) {
   .module-form,
   .module-card dl {

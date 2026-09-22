@@ -114,6 +114,24 @@ test("policy module supports versioned creation, assignment and acknowledgement"
   assert.equal(acknowledgement.acknowledgement.policyVersion, "1.0");
 });
 
+test("learning portal returns training cards and records quiz marks", async () => {
+  const overviewResponse = await fetch(`${baseUrl}/api/learning/overview`);
+  assert.equal(overviewResponse.status, 200);
+  const overview = await overviewResponse.json();
+  assert.equal(overview.modules.length, 3);
+  assert.ok(overview.rows.some((row) => row.status === "complete"));
+
+  const quizResponse = await fetch(`${baseUrl}/api/learning/modules/1/submit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ userId: 8, answers: [1, 0, 0] })
+  });
+  assert.equal(quizResponse.status, 201);
+  const quiz = await quizResponse.json();
+  assert.equal(quiz.attempt.score, 100);
+  assert.equal(quiz.attempt.status, "passed");
+});
+
 test("notification settings and read state are interactive", async () => {
   const settingsResponse = await fetch(`${baseUrl}/api/notification-settings`, {
     method: "PATCH",

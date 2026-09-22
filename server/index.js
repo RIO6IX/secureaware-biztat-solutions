@@ -119,6 +119,67 @@ const acknowledgements = [
   { id: 2, policyId: 2, policyVersion: "1.1", userId: 6, statement: "I agree to follow this policy.", acknowledgedAt: new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString() }
 ];
 
+let nextQuizAttemptId = 5;
+
+const learningModules = [
+  {
+    id: 1,
+    title: "Recognise and Report Phishing",
+    category: "Email Security",
+    durationMinutes: 20,
+    audience: "All employees",
+    source: "CISA Secure Our World",
+    summary: "Spot urgent requests, suspicious links, spoofed senders and unusual attachment behaviour before reporting through approved channels.",
+    quiz: {
+      passMark: 75,
+      questions: [
+        { prompt: "What is the safest response to a suspicious payment email?", options: ["Approve quickly", "Verify through an approved separate channel", "Forward to personal email", "Reply with credentials"], answerIndex: 1 },
+        { prompt: "Which sign can indicate phishing?", options: ["Unexpected urgency", "Normal internal newsletter", "Approved helpdesk ticket", "Scheduled meeting note"], answerIndex: 0 },
+        { prompt: "Where should the email be reported?", options: ["Approved reporting process", "Social media", "Personal inbox", "Deleted items only"], answerIndex: 0 }
+      ]
+    }
+  },
+  {
+    id: 2,
+    title: "Password Manager and MFA Habits",
+    category: "Access Control",
+    durationMinutes: 18,
+    audience: "Employees and contractors",
+    source: "CISA and NIST guidance",
+    summary: "Use unique passphrases, approved password managers and multi-factor authentication, then report unexpected approval prompts.",
+    quiz: {
+      passMark: 70,
+      questions: [
+        { prompt: "Which password habit is strongest?", options: ["Reuse one memorable password", "Use an approved password manager", "Write passwords on paper", "Share passwords with coworkers"], answerIndex: 1 },
+        { prompt: "Why report unexpected MFA prompts?", options: ["They may show credential misuse", "They improve performance", "They are always harmless", "They replace security policy"], answerIndex: 0 }
+      ]
+    }
+  },
+  {
+    id: 3,
+    title: "Policy Acknowledgement Responsibilities",
+    category: "Governance",
+    durationMinutes: 15,
+    audience: "Policy assignees",
+    source: "NIST SP 800-12 and SP 800-50",
+    summary: "Understand why current-version policy acknowledgement is evidence, and how training supports policy enforcement.",
+    quiz: {
+      passMark: 80,
+      questions: [
+        { prompt: "Why must acknowledgements track the policy version?", options: ["To prove the exact version read", "To hide policy changes", "To bypass managers", "To remove audit evidence"], answerIndex: 0 },
+        { prompt: "What should users do if a policy is unclear?", options: ["Ask the owner or manager", "Ignore it", "Publish a new version alone", "Share passwords"], answerIndex: 0 }
+      ]
+    }
+  }
+];
+
+const quizAttempts = [
+  { id: 1, moduleId: 1, userId: 3, score: 100, status: "passed", submittedAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString() },
+  { id: 2, moduleId: 1, userId: 6, score: 67, status: "failed", submittedAt: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString() },
+  { id: 3, moduleId: 2, userId: 8, score: 50, status: "failed", submittedAt: new Date(Date.now() - 11 * 60 * 60 * 1000).toISOString() },
+  { id: 4, moduleId: 3, userId: 2, score: 100, status: "passed", submittedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() }
+];
+
 const trendByPeriod = {
   30: [72, 75, 77, 79, 82, 84, 86],
   60: [64, 67, 70, 73, 77, 81, 86],
@@ -343,6 +404,68 @@ function policyOverview() {
   };
 }
 
+function publicLearningModule(module) {
+  return {
+    ...module,
+    quiz: {
+      passMark: module.quiz.passMark,
+      questionCount: module.quiz.questions.length,
+      questions: module.quiz.questions.map((question, questionIndex) => ({
+        id: `${module.id}-${questionIndex + 1}`,
+        prompt: question.prompt,
+        options: question.options.map((text, optionIndex) => ({ id: optionIndex, text }))
+      }))
+    }
+  };
+}
+
+function bestQuizAttempt(userId, moduleId) {
+  const attempts = quizAttempts.filter((attempt) => attempt.userId === userId && attempt.moduleId === moduleId);
+  return attempts.find((attempt) => attempt.status === "passed") || attempts.at(-1) || null;
+}
+
+function learningRows() {
+  return users.flatMap((user) => learningModules.map((module) => {
+    const attempt = bestQuizAttempt(user.id, module.id);
+    return {
+      employee: user.name,
+      department: user.department,
+      module: module.title,
+      score: attempt ? `${attempt.score}%` : "-",
+      status: attempt?.status === "passed" ? "complete" : attempt ? "action required" : "not started",
+      submittedAt: attempt?.submittedAt ?? null
+    };
+  }));
+}
+
+function learningOverview() {
+  const rows = learningRows();
+  const passed = rows.filter((row) => row.status === "complete").length;
+  const scoredAttempts = quizAttempts.length;
+  return {
+    summary: {
+      modules: learningModules.length,
+      quizAttempts: scoredAttempts,
+      completionRate: percent(passed, rows.length),
+      passRate: percent(quizAttempts.filter((attempt) => attempt.status === "passed").length, scoredAttempts),
+      averageScore: scoredAttempts ? Math.round(quizAttempts.reduce((sum, attempt) => sum + attempt.score, 0) / scoredAttempts) : 0
+    },
+    modules: learningModules.map(publicLearningModule),
+    rows,
+    attempts: quizAttempts.map((attempt) => ({
+      ...attempt,
+      user: users.find((user) => user.id === attempt.userId),
+      module: learningModules.find((module) => module.id === attempt.moduleId)
+    })),
+    researchBasis: [
+      { source: "NIST SP 800-50 Rev. 1", use: "Role-based learning, program measurement and continuous improvement." },
+      { source: "NIST CSF 2.0 PR.AT", use: "Personnel receive awareness training aligned to security responsibilities." },
+      { source: "NISTIR 8420", use: "Completion rates, assessment scores and behaviour indicators support awareness measurement." },
+      { source: "CISA Secure Our World", use: "Practical topics include phishing reporting, strong passwords, password managers and MFA." }
+    ]
+  };
+}
+
 function contentType(filePath) {
   if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
@@ -408,6 +531,35 @@ async function handleApi(request, response, url) {
   }
   if (request.method === "GET" && pathname === "/api/policy/overview") {
     sendJson(response, 200, policyOverview());
+    return true;
+  }
+  if (request.method === "GET" && pathname === "/api/learning/overview") {
+    sendJson(response, 200, learningOverview());
+    return true;
+  }
+  const learningSubmitMatch = pathname.match(/^\/api\/learning\/modules\/(\d+)\/submit$/);
+  if (request.method === "POST" && learningSubmitMatch) {
+    const module = learningModules.find((item) => item.id === Number(learningSubmitMatch[1]));
+    if (!module) {
+      sendJson(response, 404, { message: "Training module not found." });
+      return true;
+    }
+    const body = await readJson(request);
+    const user = users.find((entry) => entry.id === Number(body.userId)) || users.find((entry) => entry.username === body.username) || users[0];
+    const answers = Array.isArray(body.answers) ? body.answers.map(Number) : [];
+    const correct = module.quiz.questions.filter((question, index) => question.answerIndex === answers[index]).length;
+    const score = Math.round((correct / module.quiz.questions.length) * 100);
+    const attempt = {
+      id: nextQuizAttemptId++,
+      moduleId: module.id,
+      userId: user.id,
+      score,
+      status: score >= module.quiz.passMark ? "passed" : "failed",
+      submittedAt: new Date().toISOString()
+    };
+    quizAttempts.push(attempt);
+    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: user.username, action: "QUIZ_SUBMITTED", target: `${module.title} - ${score}%`, createdAt: attempt.submittedAt });
+    sendJson(response, 201, { attempt });
     return true;
   }
   if (request.method === "GET" && pathname === "/api/policy/policies") {

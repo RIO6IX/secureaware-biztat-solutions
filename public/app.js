@@ -12,6 +12,7 @@ const navItems = [
   ["overview", "Overview", "grid"],
   ["compliance", "Compliance", "shield"],
   ["policies", "Policies", "policy"],
+  ["quizzes", "Quizzes", "quiz"],
   ["reports", "Reports", "report"],
   ["notifications", "Notifications", "bell"]
 ];
@@ -87,6 +88,7 @@ function pageMeta() {
     overview: ["Compliance overview", "Monitor policy awareness, training progress and emerging risk."],
     compliance: ["Compliance management", "Review department performance and follow up on overdue actions."],
     policies: ["Policy management", "Publish, assign and acknowledge current policy versions."],
+    quizzes: ["Training and quizzes", "Complete training cards and track scored assessment evidence."],
     reports: ["Reports and exports", "Generate role-appropriate summaries from approved compliance data."],
     notifications: ["Notifications", "Manage reminders and stay informed about important compliance changes."]
   }[state.route];
@@ -487,6 +489,57 @@ async function policiesPage() {
   });
 }
 
+async function quizzesPage() {
+  const data = await api("/api/learning/overview");
+  shell(`
+    <div class="section-heading"><div><span class="eyebrow">Awareness assessment</span><h1>Training cards and quizzes</h1><p>Each training card includes a short quiz. Scores, pass status and who completed each module are recorded for dashboard evidence.</p></div></div>
+    <div class="metric-grid compact-metrics">
+      ${metricCard("Training cards", data.summary.modules, "Research-based learning topics", "training", "green")}
+      ${metricCard("Quiz attempts", data.summary.quizAttempts, "Server-scored submissions", "quiz", "blue")}
+      ${metricCard("Average mark", `${data.summary.averageScore}%`, `${data.summary.passRate}% pass rate`, "report", "purple")}
+      ${metricCard("Completion", `${data.summary.completionRate}%`, "Across all users and modules", "check", "orange")}
+    </div>
+    ${panel("Training portal", "Complete the training, then answer the quiz below each card", `
+      <div class="module-card-grid">
+        ${data.modules.map((module) => `
+          <article class="module-card training-card">
+            <div><span class="eyebrow">${escapeHtml(module.category)} · ${module.durationMinutes} min</span><h3>${escapeHtml(module.title)}</h3><p>${escapeHtml(module.summary)}</p></div>
+            <dl><div><dt>Audience</dt><dd>${escapeHtml(module.audience)}</dd></div><div><dt>Basis</dt><dd>${escapeHtml(module.source)}</dd></div><div><dt>Pass mark</dt><dd>${module.quiz.passMark}%</dd></div></dl>
+            <form class="quiz-inline" data-learning-quiz="${module.id}">
+              ${module.quiz.questions.map((question, questionIndex) => `
+                <fieldset><legend>${escapeHtml(question.prompt)}</legend>${question.options.map((option) => `<label><input type="radio" name="q${questionIndex}" value="${option.id}" required> ${escapeHtml(option.text)}</label>`).join("")}</fieldset>
+              `).join("")}
+              <button class="button button-primary" type="submit">Submit quiz as demo user</button>
+            </form>
+          </article>
+        `).join("")}
+      </div>
+    `, "full-panel")}
+    <div class="dashboard-grid">
+      ${panel("Who completed what", "Marks and status by employee, department and training module", reportTable(data.rows))}
+      ${panel("Research basis", "Sources used for the learning model", reportTable(data.researchBasis))}
+    </div>
+    ${panel("Quiz attempts", "Latest scored attempts for viva/demo evidence", reportTable(data.attempts.map((attempt) => ({
+      employee: attempt.user?.name,
+      department: attempt.user?.department,
+      module: attempt.module?.title,
+      mark: `${attempt.score}%`,
+      status: attempt.status,
+      submittedAt: formatDateTime(attempt.submittedAt)
+    }))), "full-panel")}
+  `, data.summary.unreadNotifications || 0);
+
+  document.querySelectorAll("[data-learning-quiz]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const answers = Array.from(new FormData(form).entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => Number(value));
+      const result = await api(`/api/learning/modules/${form.dataset.learningQuiz}/submit`, { method: "POST", body: JSON.stringify({ userId: 8, answers }) });
+      showToast(`Quiz submitted: ${result.attempt.score}% (${result.attempt.status}).`);
+      quizzesPage();
+    });
+  });
+}
+
 async function reportsPage() {
   const [dashboard, report] = await Promise.all([
     api("/api/compliance/dashboard"),
@@ -560,6 +613,7 @@ async function render() {
   try {
     if (state.route === "compliance") return await compliancePage();
     if (state.route === "policies") return await policiesPage();
+    if (state.route === "quizzes") return await quizzesPage();
     if (state.route === "reports") return await reportsPage();
     if (state.route === "notifications") return await notificationsPage();
     return await overviewPage();
