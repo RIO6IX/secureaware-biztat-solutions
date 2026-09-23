@@ -7,7 +7,9 @@ const state = {
   reportType: "executive",
   reportDepartment: "All",
   learningProgress: {},
-  selectedLearningModule: null
+  selectedLearningModule: null,
+  completionModule: "All",
+  completionStatus: "All"
 };
 
 const navItems = [
@@ -388,6 +390,37 @@ function reportTable(rows) {
   return `<div class="table-scroll"><table><thead><tr>${headers.map((header) => `<th>${escapeHtml(prettyHeader(header))}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((header) => `<td>${header === "status" || header === "risk" ? status(row[header]) : escapeHtml(row[header])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
+function completionDropdownView(rows, modules, forcedModule = null) {
+  const moduleOptions = ["All", ...modules.map((module) => module.title)];
+  const statusOptions = ["All", "complete", "action required", "not started"];
+  const selectedModule = forcedModule || state.completionModule;
+  const selectedStatus = state.completionStatus;
+  const filteredRows = rows.filter((row) => {
+    const moduleMatch = selectedModule === "All" || row.module === selectedModule;
+    const statusMatch = selectedStatus === "All" || row.status === selectedStatus;
+    return moduleMatch && statusMatch;
+  });
+  return `
+    <div class="completion-filter-bar">
+      <label><span>Training</span><select id="completionModuleFilter" ${forcedModule ? "disabled" : ""}>${moduleOptions.map((module) => `<option value="${escapeHtml(module)}" ${module === selectedModule ? "selected" : ""}>${escapeHtml(module)}</option>`).join("")}</select></label>
+      <label><span>Status</span><select id="completionStatusFilter">${statusOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === selectedStatus ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label>
+      <strong>${filteredRows.length} records</strong>
+    </div>
+    ${reportTable(filteredRows)}
+  `;
+}
+
+function bindCompletionDropdowns(refresh) {
+  document.getElementById("completionModuleFilter")?.addEventListener("change", (event) => {
+    state.completionModule = event.target.value;
+    refresh();
+  });
+  document.getElementById("completionStatusFilter")?.addEventListener("change", (event) => {
+    state.completionStatus = event.target.value;
+    refresh();
+  });
+}
+
 async function policiesPage() {
   const data = await api("/api/policy/overview");
   const employeeAssignments = data.assignments
@@ -557,11 +590,12 @@ async function quizzesPage() {
       <div class="section-heading"><div><span class="eyebrow">Training course</span><h1>Read, continue, then take the quiz</h1><p>The quiz unlocks only after the training content is completed.</p></div></div>
       ${learningCourseDetail(selectedModule)}
       <div class="dashboard-grid">
-        ${panel("Who completed what", "Marks and status by employee, department and training module", reportTable(data.rows.filter((row) => row.module === selectedModule.title)))}
+        ${panel("Who completed what", "Use the dropdown to review completion and marks", completionDropdownView(data.rows, data.modules, selectedModule.title))}
         ${panel("Research basis", "Sources used for this training model", reportTable(data.researchBasis))}
       </div>
     `, data.summary.unreadNotifications || 0);
     bindLearningCourseActions();
+    bindCompletionDropdowns(quizzesPage);
     document.getElementById("backToCourses")?.addEventListener("click", () => {
       state.selectedLearningModule = null;
       quizzesPage();
@@ -580,7 +614,7 @@ async function quizzesPage() {
       <div class="course-grid">${data.modules.map(learningCourseCard).join("")}</div>
     `, "full-panel")}
     <div class="dashboard-grid">
-      ${panel("Who completed what", "Marks and status by employee, department and training module", reportTable(data.rows))}
+      ${panel("Who completed what", "Use the dropdowns to filter by training and status", completionDropdownView(data.rows, data.modules))}
       ${panel("Research basis", "Sources used for the learning model", reportTable(data.researchBasis))}
     </div>
     ${panel("Quiz attempts", "Latest scored attempts for viva/demo evidence", reportTable(data.attempts.map((attempt) => ({
@@ -599,6 +633,7 @@ async function quizzesPage() {
       quizzesPage();
     });
   });
+  bindCompletionDropdowns(quizzesPage);
 }
 
 function bindLearningCourseActions() {
