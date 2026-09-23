@@ -7,7 +7,9 @@ const state = {
   reportType: "executive",
   reportDepartment: "All",
   learningProgress: {},
-  selectedTrainingModule: null
+  selectedTrainingModule: null,
+  completionModule: "All",
+  completionStatus: "All"
 };
 
 const navItems = [
@@ -388,6 +390,37 @@ function reportTable(rows) {
   return `<div class="table-scroll"><table><thead><tr>${headers.map((header) => `<th>${escapeHtml(prettyHeader(header))}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((header) => `<td>${header === "status" || header === "risk" ? status(row[header]) : escapeHtml(row[header])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
+function completionDropdownView(rows, modules, forcedModule = null) {
+  const moduleOptions = ["All", ...modules.map((module) => module.title)];
+  const statusOptions = ["All", "complete", "overdue", "pending"];
+  const selectedModule = forcedModule || state.completionModule;
+  const selectedStatus = state.completionStatus;
+  const filteredRows = rows.filter((row) => {
+    const moduleMatch = selectedModule === "All" || row.module === selectedModule;
+    const statusMatch = selectedStatus === "All" || row.status === selectedStatus;
+    return moduleMatch && statusMatch;
+  });
+  return `
+    <div class="completion-filter-bar">
+      <label><span>Training</span><select id="completionModuleFilter" ${forcedModule ? "disabled" : ""}>${moduleOptions.map((module) => `<option value="${escapeHtml(module)}" ${module === selectedModule ? "selected" : ""}>${escapeHtml(module)}</option>`).join("")}</select></label>
+      <label><span>Status</span><select id="completionStatusFilter">${statusOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === selectedStatus ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label>
+      <strong>${filteredRows.length} records</strong>
+    </div>
+    ${reportTable(filteredRows)}
+  `;
+}
+
+function bindCompletionDropdowns(refresh) {
+  document.getElementById("completionModuleFilter")?.addEventListener("change", (event) => {
+    state.completionModule = event.target.value;
+    refresh();
+  });
+  document.getElementById("completionStatusFilter")?.addEventListener("change", (event) => {
+    state.completionStatus = event.target.value;
+    refresh();
+  });
+}
+
 function trainingCourseCard(module) {
   return `
     <article class="course-card course-card-clickable">
@@ -560,9 +593,10 @@ async function quizzesPage() {
     shell(`
       <div class="section-heading"><div><span class="eyebrow">Quiz course</span><h1>Read the training, then complete the quiz</h1><p>Marks are server-scored and shown on the dashboard.</p></div></div>
       ${trainingCourseDetail(selectedModule)}
-      ${panel("Marks for this module", "Employee quiz marks and completion status", reportTable(data.complianceRows.filter((row) => row.module === selectedModule.title)), "full-panel")}
+      ${panel("Marks for this module", "Use the dropdown to review completion and marks", completionDropdownView(data.complianceRows, data.modules, selectedModule.title), "full-panel")}
     `, data.summary.unreadNotifications || 0);
     bindTrainingCourseActions(quizzesPage);
+    bindCompletionDropdowns(quizzesPage);
     document.getElementById("backToTrainingCards")?.addEventListener("click", () => {
       state.selectedTrainingModule = null;
       quizzesPage();
@@ -590,7 +624,7 @@ async function quizzesPage() {
       <div class="course-grid">${data.modules.map(trainingCourseCard).join("")}</div>
     `, "full-panel")}
     <div class="dashboard-grid">
-      ${panel("Who completed training", "Completion is calculated from passed quiz attempts", reportTable(data.complianceRows))}
+      ${panel("Who completed training", "Use the dropdowns to filter by training and status", completionDropdownView(data.complianceRows, data.modules))}
       ${panel("Research basis", "Why these quiz metrics are tracked", reportTable(data.researchBasis))}
     </div>
     ${panel("Marks register", "Employee quiz marks and pass/fail outcomes", reportTable(resultRows), "full-panel")}
@@ -601,6 +635,7 @@ async function quizzesPage() {
       quizzesPage();
     });
   });
+  bindCompletionDropdowns(quizzesPage);
 }
 
 async function reportsPage() {

@@ -1742,6 +1742,42 @@ tbody tr:hover {
   font-weight: 800;
 }
 
+.completion-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.completion-filter-bar label {
+  display: grid;
+  gap: 6px;
+  min-width: min(260px, 100%);
+}
+
+.completion-filter-bar label span {
+  color: var(--slate-500);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.completion-filter-bar select {
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.completion-filter-bar strong {
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--blue-600);
+  background: var(--blue-100);
+}
+
 @media (max-width: 570px) {
   .module-form,
   .module-card dl,
