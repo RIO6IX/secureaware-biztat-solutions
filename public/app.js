@@ -6,7 +6,8 @@ const state = {
   period: "30",
   reportType: "executive",
   reportDepartment: "All",
-  learningProgress: {}
+  learningProgress: {},
+  selectedLearningModule: null
 };
 
 const navItems = [
@@ -275,7 +276,10 @@ function overdueTable(items) {
 }
 
 async function overviewPage() {
-  const data = await api(`/api/compliance/dashboard?department=${encodeURIComponent(state.department)}&period=${state.period}`);
+  const [data, learning] = await Promise.all([
+    api(`/api/compliance/dashboard?department=${encodeURIComponent(state.department)}&period=${state.period}`),
+    api("/api/learning/overview")
+  ]);
   shell(`
     ${filterBar(data)}
     <div class="metric-grid">
@@ -305,6 +309,7 @@ async function overviewPage() {
         </div>
       `)}
     </div>
+    ${panel("Training marks dashboard", "Who completed training, who needs follow-up, and latest marks", reportTable(learning.rows.filter((row) => row.status !== "not started").slice(0, 8)), "full-panel")}
     ${panel("Priority follow-up", "Overdue items requiring authorized action", overdueTable(data.overdue), "full-panel")}
     <p class="updated-time">${icon("refresh", 14)} Data refreshed ${formatDateTime(data.lastUpdated)}</p>
   `, data.summary.unreadNotifications);
@@ -491,19 +496,37 @@ async function policiesPage() {
 }
 
 function learningCourseCard(module) {
+  return `
+    <article class="course-card course-card-clickable">
+      <button class="course-open" data-open-course="${module.id}" type="button" aria-label="Open ${escapeHtml(module.title)} training">
+        <img src="${escapeHtml(module.image)}" alt="" class="course-image">
+        <span class="eyebrow">${escapeHtml(module.category)} · ${module.durationMinutes} min</span>
+        <strong>${escapeHtml(module.title)}</strong>
+        <span>${escapeHtml(module.summary)}</span>
+        <span class="course-start">${icon("arrow", 16)} Start training</span>
+      </button>
+    </article>
+  `;
+}
+
+function learningCourseDetail(module) {
   const lessons = module.lessons || [];
   const currentStep = Math.min(state.learningProgress[module.id] || 0, lessons.length);
   const lesson = lessons[currentStep];
   const quizUnlocked = currentStep >= lessons.length;
   return `
-    <article class="course-card">
-      <div class="course-media course-tone-${module.id}">
-        ${icon(module.id === 1 ? "warning" : module.id === 2 ? "shield" : "policy", 42)}
-        <span>${escapeHtml(module.category)}</span>
+    <div class="course-detail">
+      <button class="button button-secondary" id="backToCourses" type="button">${icon("arrow", 16)} Back to training cards</button>
+      <div class="course-detail-hero">
+        <img src="${escapeHtml(module.image)}" alt="" class="course-detail-image">
+        <div>
+          <span class="eyebrow">${escapeHtml(module.category)} · ${module.durationMinutes} min · ${escapeHtml(module.source)}</span>
+          <h1>${escapeHtml(module.title)}</h1>
+          <p>${escapeHtml(module.summary)}</p>
+        </div>
       </div>
       <div class="course-body">
-        <div><span class="eyebrow">${module.durationMinutes} min · ${escapeHtml(module.audience)}</span><h3>${escapeHtml(module.title)}</h3><p>${escapeHtml(module.summary)}</p></div>
-        <dl><div><dt>Basis</dt><dd>${escapeHtml(module.source)}</dd></div><div><dt>Pass mark</dt><dd>${module.quiz.passMark}%</dd></div><div><dt>Lessons</dt><dd>${lessons.length}</dd></div></dl>
+        <dl><div><dt>Audience</dt><dd>${escapeHtml(module.audience)}</dd></div><div><dt>Pass mark</dt><dd>${module.quiz.passMark}%</dd></div><div><dt>Lessons</dt><dd>${lessons.length}</dd></div></dl>
         ${quizUnlocked ? `
           <form class="quiz-inline" data-learning-quiz="${module.id}">
             <div class="lesson-complete">${icon("check", 18)} Training read. Complete the quiz to record your mark.</div>
@@ -522,12 +545,29 @@ function learningCourseCard(module) {
           </div>
         `}
       </div>
-    </article>
+    </div>
   `;
 }
 
 async function quizzesPage() {
   const data = await api("/api/learning/overview");
+  const selectedModule = data.modules.find((module) => module.id === state.selectedLearningModule);
+  if (selectedModule) {
+    shell(`
+      <div class="section-heading"><div><span class="eyebrow">Training course</span><h1>Read, continue, then take the quiz</h1><p>The quiz unlocks only after the training content is completed.</p></div></div>
+      ${learningCourseDetail(selectedModule)}
+      <div class="dashboard-grid">
+        ${panel("Who completed what", "Marks and status by employee, department and training module", reportTable(data.rows.filter((row) => row.module === selectedModule.title)))}
+        ${panel("Research basis", "Sources used for this training model", reportTable(data.researchBasis))}
+      </div>
+    `, data.summary.unreadNotifications || 0);
+    bindLearningCourseActions();
+    document.getElementById("backToCourses")?.addEventListener("click", () => {
+      state.selectedLearningModule = null;
+      quizzesPage();
+    });
+    return;
+  }
   shell(`
     <div class="section-heading"><div><span class="eyebrow">Awareness assessment</span><h1>Training cards and quizzes</h1><p>Each training card includes a short quiz. Scores, pass status and who completed each module are recorded for dashboard evidence.</p></div></div>
     <div class="metric-grid compact-metrics">
@@ -553,6 +593,15 @@ async function quizzesPage() {
     }))), "full-panel")}
   `, data.summary.unreadNotifications || 0);
 
+  document.querySelectorAll("[data-open-course]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedLearningModule = Number(button.dataset.openCourse);
+      quizzesPage();
+    });
+  });
+}
+
+function bindLearningCourseActions() {
   document.querySelectorAll("[data-learning-next]").forEach((button) => {
     button.addEventListener("click", () => {
       const moduleId = Number(button.dataset.learningNext);

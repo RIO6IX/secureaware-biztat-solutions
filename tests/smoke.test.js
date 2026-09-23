@@ -120,6 +120,7 @@ test("learning portal returns training cards and records quiz marks", async () =
   const overview = await overviewResponse.json();
   assert.equal(overview.modules.length, 3);
   assert.ok(overview.modules.every((module) => module.lessons.length >= 3));
+  assert.ok(overview.modules.every((module) => module.image.endsWith(".svg")));
   assert.ok(overview.rows.some((row) => row.status === "complete"));
 
   const quizResponse = await fetch(`${baseUrl}/api/learning/modules/1/submit`, {

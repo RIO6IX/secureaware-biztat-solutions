@@ -129,6 +129,7 @@ const learningModules = [
     durationMinutes: 20,
     audience: "All employees",
     source: "CISA Secure Our World",
+    image: "/training-phishing.svg",
     summary: "Spot urgent requests, suspicious links, spoofed senders and unusual attachment behaviour before reporting through approved channels.",
     lessons: [
       {
@@ -160,6 +161,7 @@ const learningModules = [
     durationMinutes: 18,
     audience: "Employees and contractors",
     source: "CISA and NIST guidance",
+    image: "/training-password.svg",
     summary: "Use unique passphrases, approved password managers and multi-factor authentication, then report unexpected approval prompts.",
     lessons: [
       {
@@ -190,6 +192,7 @@ const learningModules = [
     durationMinutes: 15,
     audience: "Policy assignees",
     source: "NIST SP 800-12 and SP 800-50",
+    image: "/training-policy.svg",
     summary: "Understand why current-version policy acknowledgement is evidence, and how training supports policy enforcement.",
     lessons: [
       {

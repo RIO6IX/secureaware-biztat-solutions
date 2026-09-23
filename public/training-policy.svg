@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Policy acknowledgement training illustration</title>
+  <desc id="desc">A policy document with a signature check mark and audit trail.</desc>
+  <rect width="640" height="360" fill="#ffdce7"/>
+  <circle cx="534" cy="92" r="48" fill="#ffc2d1"/>
+  <rect x="198" y="48" width="244" height="264" rx="18" fill="#ffffff" stroke="#19243b" stroke-width="8"/>
+  <path d="M388 48v72h54" fill="#f2f6fb" stroke="#19243b" stroke-width="8" stroke-linejoin="round"/>
+  <rect x="232" y="142" width="154" height="18" rx="9" fill="#d8e1ef"/>
+  <rect x="232" y="181" width="176" height="18" rx="9" fill="#d8e1ef"/>
+  <rect x="232" y="220" width="114" height="18" rx="9" fill="#d8e1ef"/>
+  <circle cx="410" cy="250" r="52" fill="#35c889" stroke="#19243b" stroke-width="7"/>
+  <path d="m384 251 17 17 36-44" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M110 254h108m-78-42h78m-44-42h44" stroke="#19243b" stroke-width="10" stroke-linecap="round"/>
+</svg>
