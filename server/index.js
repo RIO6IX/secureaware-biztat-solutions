@@ -68,6 +68,7 @@ const trainingModules = [
     durationMinutes: 25,
     owner: "Information Security",
     status: "active",
+    image: "/training-phishing.svg",
     summary: "Recognise social engineering indicators, verify requests through trusted channels and report suspicious messages.",
     lessons: [
       { title: "Inspect before you click", body: "Phishing relies on urgency, spoofed senders, unusual links and unexpected attachments. Check the sender domain, link destination and context before opening a file or approving a request." },
@@ -91,6 +92,7 @@ const trainingModules = [
     durationMinutes: 20,
     owner: "IT Security",
     status: "active",
+    image: "/training-password.svg",
     summary: "Use unique credentials, approved password managers and report unexpected MFA approval prompts.",
     lessons: [
       { title: "Use unique credentials", body: "A password reused across services can expose business systems after a personal account breach. Use the approved password manager to generate and store unique passwords." },
@@ -113,6 +115,7 @@ const trainingModules = [
     durationMinutes: 30,
     owner: "Compliance",
     status: "active",
+    image: "/training-policy.svg",
     summary: "Classify, store and share client data through approved systems using least-privilege access.",
     lessons: [
       { title: "Classify before sharing", body: "Client and business data should be handled according to its sensitivity. Classification tells employees where data may be stored, who may access it and how it may be shared." },
@@ -135,6 +138,7 @@ const trainingModules = [
     durationMinutes: 35,
     owner: "Engineering Security",
     status: "draft",
+    image: "/training-password.svg",
     summary: "Introduces input validation, secure error handling, dependency awareness and safe code review routines.",
     lessons: [
       { title: "Validate at trust boundaries", body: "Applications must validate untrusted input on the server and use client-side validation only to improve usability. Never rely only on browser checks." },

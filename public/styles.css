@@ -1554,6 +1554,95 @@ tbody tr:hover {
   box-shadow: var(--shadow-sm);
 }
 
+.course-card-clickable {
+  min-height: 100%;
+}
+
+.course-open {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 0 0 18px;
+  border: 0;
+  color: inherit;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.course-open strong,
+.course-open > span:not(.eyebrow):not(.course-start) {
+  margin: 0 18px;
+}
+
+.course-open strong {
+  font-size: 17px;
+}
+
+.course-open > span:not(.eyebrow):not(.course-start) {
+  color: var(--slate-500);
+  line-height: 1.5;
+}
+
+.course-open .eyebrow {
+  margin: 0 18px;
+}
+
+.course-open:hover strong {
+  color: var(--blue-600);
+}
+
+.course-image {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--slate-100);
+}
+
+.course-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: auto 18px 0;
+  color: var(--blue-600);
+  font-weight: 800;
+}
+
+.course-detail {
+  display: grid;
+  gap: 18px;
+}
+
+.course-detail-hero {
+  display: grid;
+  grid-template-columns: minmax(260px, 420px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  padding: 20px;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+
+.course-detail-image {
+  width: 100%;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.course-detail-hero h1 {
+  margin: 8px 0 10px;
+  font-size: clamp(28px, 4vw, 44px);
+}
+
+.course-detail-hero p {
+  margin: 0;
+  color: var(--slate-500);
+  line-height: 1.6;
+}
+
 .course-media {
   min-height: 138px;
   display: grid;
@@ -1657,6 +1746,12 @@ tbody tr:hover {
   .module-form,
   .module-card dl,
   .course-body dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .course-detail-hero {
     grid-template-columns: 1fr;
   }
 }

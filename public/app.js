@@ -6,7 +6,8 @@ const state = {
   period: "30",
   reportType: "executive",
   reportDepartment: "All",
-  learningProgress: {}
+  learningProgress: {},
+  selectedTrainingModule: null
 };
 
 const navItems = [
@@ -275,7 +276,10 @@ function overdueTable(items) {
 }
 
 async function overviewPage() {
-  const data = await api(`/api/compliance/dashboard?department=${encodeURIComponent(state.department)}&period=${state.period}`);
+  const [data, training] = await Promise.all([
+    api(`/api/compliance/dashboard?department=${encodeURIComponent(state.department)}&period=${state.period}`),
+    api("/api/training/overview")
+  ]);
   shell(`
     ${filterBar(data)}
     <div class="metric-grid">
@@ -305,6 +309,7 @@ async function overviewPage() {
         </div>
       `)}
     </div>
+    ${panel("Training marks dashboard", "Who completed training, who needs follow-up, and latest marks", reportTable(training.complianceRows.filter((row) => row.status !== "pending").slice(0, 8)), "full-panel")}
     ${panel("Priority follow-up", "Overdue items requiring authorized action", overdueTable(data.overdue), "full-panel")}
     <p class="updated-time">${icon("refresh", 14)} Data refreshed ${formatDateTime(data.lastUpdated)}</p>
   `, data.summary.unreadNotifications);
@@ -384,18 +389,36 @@ function reportTable(rows) {
 }
 
 function trainingCourseCard(module) {
+  return `
+    <article class="course-card course-card-clickable">
+      <button class="course-open" data-open-training="${module.id}" type="button" aria-label="Open ${escapeHtml(module.title)} training">
+        <img src="${escapeHtml(module.image)}" alt="" class="course-image">
+        <span class="eyebrow">${escapeHtml(module.category)} · ${module.durationMinutes} min</span>
+        <strong>${escapeHtml(module.title)}</strong>
+        <span>${escapeHtml(module.summary)}</span>
+        <span class="course-start">${icon("arrow", 16)} Start training</span>
+      </button>
+    </article>
+  `;
+}
+
+function trainingCourseDetail(module) {
   const lessons = module.lessons || [];
   const currentStep = Math.min(state.learningProgress[module.id] || 0, lessons.length);
   const lesson = lessons[currentStep];
   const quizUnlocked = currentStep >= lessons.length;
   return `
-    <article class="course-card">
-      <div class="course-media course-tone-${((module.id - 1) % 3) + 1}">
-        ${icon(module.category.includes("Email") ? "warning" : module.category.includes("Access") ? "shield" : "training", 42)}
-        <span>${escapeHtml(module.category)}</span>
+    <div class="course-detail">
+      <button class="button button-secondary" id="backToTrainingCards" type="button">${icon("arrow", 16)} Back to training cards</button>
+      <div class="course-detail-hero">
+        <img src="${escapeHtml(module.image)}" alt="" class="course-detail-image">
+        <div>
+          <span class="eyebrow">${escapeHtml(module.category)} · ${module.durationMinutes} min · ${escapeHtml(module.owner)}</span>
+          <h1>${escapeHtml(module.title)}</h1>
+          <p>${escapeHtml(module.summary)}</p>
+        </div>
       </div>
       <div class="course-body">
-        <div><span class="eyebrow">${module.durationMinutes} min · ${escapeHtml(module.owner)}</span><h3>${escapeHtml(module.title)}</h3><p>${escapeHtml(module.summary)}</p></div>
         <dl><div><dt>Status</dt><dd>${escapeHtml(module.status)}</dd></div><div><dt>Pass mark</dt><dd>${module.quiz.passMark}%</dd></div><div><dt>Lessons</dt><dd>${lessons.length}</dd></div></dl>
         ${quizUnlocked ? `
           <form class="quiz-inline" data-training-quiz="${module.id}">
@@ -415,12 +438,29 @@ function trainingCourseCard(module) {
           </div>
         `}
       </div>
-    </article>
+    </div>
   `;
 }
 
 async function trainingPage() {
   const data = await api("/api/training/overview");
+  const selectedModule = data.modules.find((module) => module.id === state.selectedTrainingModule);
+  if (selectedModule) {
+    shell(`
+      <div class="section-heading"><div><span class="eyebrow">Training course</span><h1>Read, continue, then take the quiz</h1><p>The quiz unlocks only after the training content is completed.</p></div></div>
+      ${trainingCourseDetail(selectedModule)}
+      <div class="dashboard-grid">
+        ${panel("Who completed this training", "Completion is calculated from passed quiz attempts", reportTable(data.complianceRows.filter((row) => row.module === selectedModule.title)))}
+        ${panel("Research basis", "Why this training and quiz evidence is tracked", reportTable(data.researchBasis))}
+      </div>
+    `, data.summary.unreadNotifications || 0);
+    bindTrainingCourseActions(trainingPage);
+    document.getElementById("backToTrainingCards")?.addEventListener("click", () => {
+      state.selectedTrainingModule = null;
+      trainingPage();
+    });
+    return;
+  }
   shell(`
     <div class="section-heading"><div><span class="eyebrow">Member 3 contribution</span><h1>Security training and quiz assessment</h1><p>Role-aware awareness modules, measurable quiz outcomes and compliance evidence for Biztat Solutions.</p></div></div>
     <div class="metric-grid compact-metrics">
@@ -486,11 +526,20 @@ async function trainingPage() {
     showToast("Training assignment recorded.");
     trainingPage();
   });
+  document.querySelectorAll("[data-open-training]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedTrainingModule = Number(button.dataset.openTraining);
+      trainingPage();
+    });
+  });
+}
+
+function bindTrainingCourseActions(refresh) {
   document.querySelectorAll("[data-training-next]").forEach((button) => {
     button.addEventListener("click", () => {
       const moduleId = Number(button.dataset.trainingNext);
       state.learningProgress[moduleId] = (state.learningProgress[moduleId] || 0) + 1;
-      trainingPage();
+      refresh();
     });
   });
   document.querySelectorAll("[data-training-quiz]").forEach((form) => {
@@ -499,13 +548,27 @@ async function trainingPage() {
       const answers = Array.from(new FormData(form).entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => Number(value));
       const result = await api(`/api/training/modules/${form.dataset.trainingQuiz}/submit`, { method: "POST", body: JSON.stringify({ userId: 8, answers }) });
       showToast(`Quiz scored ${result.result.score}%.`);
-      trainingPage();
+      refresh();
     });
   });
 }
 
 async function quizzesPage() {
   const data = await api("/api/training/overview");
+  const selectedModule = data.modules.find((module) => module.id === state.selectedTrainingModule);
+  if (selectedModule) {
+    shell(`
+      <div class="section-heading"><div><span class="eyebrow">Quiz course</span><h1>Read the training, then complete the quiz</h1><p>Marks are server-scored and shown on the dashboard.</p></div></div>
+      ${trainingCourseDetail(selectedModule)}
+      ${panel("Marks for this module", "Employee quiz marks and completion status", reportTable(data.complianceRows.filter((row) => row.module === selectedModule.title)), "full-panel")}
+    `, data.summary.unreadNotifications || 0);
+    bindTrainingCourseActions(quizzesPage);
+    document.getElementById("backToTrainingCards")?.addEventListener("click", () => {
+      state.selectedTrainingModule = null;
+      quizzesPage();
+    });
+    return;
+  }
   const resultRows = data.results.map((result) => ({
     employee: result.user?.name,
     department: result.user?.department,
@@ -532,19 +595,9 @@ async function quizzesPage() {
     </div>
     ${panel("Marks register", "Employee quiz marks and pass/fail outcomes", reportTable(resultRows), "full-panel")}
   `, data.summary.unreadNotifications || 0);
-  document.querySelectorAll("[data-training-next]").forEach((button) => {
+  document.querySelectorAll("[data-open-training]").forEach((button) => {
     button.addEventListener("click", () => {
-      const moduleId = Number(button.dataset.trainingNext);
-      state.learningProgress[moduleId] = (state.learningProgress[moduleId] || 0) + 1;
-      quizzesPage();
-    });
-  });
-  document.querySelectorAll("[data-training-quiz]").forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const answers = Array.from(new FormData(form).entries()).sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => Number(value));
-      const result = await api(`/api/training/modules/${form.dataset.trainingQuiz}/submit`, { method: "POST", body: JSON.stringify({ userId: 8, answers }) });
-      showToast(`Quiz scored ${result.result.score}%.`);
+      state.selectedTrainingModule = Number(button.dataset.openTraining);
       quizzesPage();
     });
   });
