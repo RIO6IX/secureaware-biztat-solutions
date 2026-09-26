@@ -63,3 +63,43 @@ test("state changing request without csrf is rejected", async () => {
     assert.equal(response.status, 403);
   });
 });
+
+test("password change follows NIST SP 800-63B-4 length and blocklist rules", async () => {
+  await withServer(async (base) => {
+    const auth = await login(base, "consultant.demo", "ConsultantPass!2026");
+    const change = (currentPassword, newPassword) => fetch(`${base}/api/auth/password`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: auth.cookie, "x-csrf-token": auth.body.csrfToken },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    assert.equal((await change("wrong-current-password", "correct horse battery staple")).status, 400);
+    assert.equal((await change("ConsultantPass!2026", "Short!1a")).status, 400);
+    assert.equal((await change("ConsultantPass!2026", "password1234567")).status, 400);
+    // No composition rules: a long lower-case passphrase is accepted.
+    assert.equal((await change("ConsultantPass!2026", "river lantern pepper orbit")).status, 200);
+    await login(base, "consultant.demo", "river lantern pepper orbit");
+  });
+});
+
+test("notifications are scoped to the signed-in user", async () => {
+  await withServer(async (base) => {
+    const auth = await login(base, "employee.demo", "EmployeePass!2026");
+    const response = await fetch(`${base}/api/notifications`, { headers: { cookie: auth.cookie } });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.ok(Array.isArray(body.notifications));
+    const foreign = await fetch(`${base}/api/notifications/999999/read`, { method: "POST", headers: { cookie: auth.cookie, "x-csrf-token": auth.body.csrfToken } });
+    assert.equal(foreign.status, 404);
+  });
+});
+
+test("oversized request bodies are rejected with 413", async () => {
+  await withServer(async (base) => {
+    const response = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "x".repeat(1_100_000) })
+    });
+    assert.equal(response.status, 413);
+  });
+});
