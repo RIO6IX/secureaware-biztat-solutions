@@ -549,3 +549,112 @@ test("learners can download their own training record and old records are purged
   assert.equal(outcome.cert, 0, "certificates go with their attempt");
   assert.equal(outcome.events[0][1], "TRAINING_RETENTION_PURGE");
 });
+
+test("no learner-facing endpoint ever exposes answer correctness", async () => {
+  const learner = await login("employee.demo");
+  const responses = [];
+  const collect = async (label, promise) => {
+    const response = await promise;
+    responses.push([label, response]);
+    return response;
+  };
+  const catalogue = await collect("catalogue", learner.get("/api/training/courses?tab=all"));
+  for (const course of catalogue.body.courses) {
+    const detail = await collect(`course ${course.slug}`, learner.get(`/api/training/courses/${course.slug}`));
+    for (const lesson of detail.body.lessons) await collect(`lesson ${course.slug}#${lesson.position}`, learner.get(`/api/training/courses/${course.slug}/lessons/${lesson.position}`));
+  }
+  const slug = "passwords-mfa";
+  await completeAllLessons(learner, slug);
+  const started = await collect("quiz start", learner.post(`/api/training/courses/${slug}/attempts`));
+  await collect("quiz resume", learner.get(`/api/training/attempts/${started.body.attempt.id}`));
+  await collect("quiz submit", learner.post(`/api/training/attempts/${started.body.attempt.id}/submit`, { answers: answersFor(started.body.attempt, false) }));
+  await collect("result", learner.get(`/api/training/attempts/${started.body.attempt.id}/result`));
+  await collect("me", learner.get("/api/training/me"));
+  const manager = await login("manager.demo");
+  await collect("team", manager.get("/api/training/team"));
+  await collect("team member", manager.get(`/api/training/team/users/${learner.user.id}`));
+  assert.ok(responses.length > 30, "crawled every course, lesson and quiz endpoint");
+  for (const [label, response] of responses) {
+    assert.equal(response.status < 300, true, `${label} returned ${response.status}`);
+    assertNoCorrectness(response.body, label);
+  }
+});
+
+test("every state-changing training route requires the CSRF token", async () => {
+  const admin = await login("security.admin");
+  const routes = [
+    ["POST", "/api/training/courses/phishing-social-engineering/lessons/1/complete"],
+    ["POST", "/api/training/courses/phishing-social-engineering/attempts"],
+    ["POST", "/api/training/attempts/1/submit"],
+    ["POST", "/api/training/team/reminders"],
+    ["POST", "/api/training/admin/courses"],
+    ["PUT", "/api/training/admin/courses/1"],
+    ["POST", "/api/training/admin/courses/1/publish"],
+    ["POST", "/api/training/admin/courses/1/archive"],
+    ["POST", "/api/training/admin/courses/1/lessons"],
+    ["PUT", "/api/training/admin/lessons/1"],
+    ["DELETE", "/api/training/admin/lessons/1"],
+    ["POST", "/api/training/admin/courses/1/questions"],
+    ["PUT", "/api/training/admin/questions/1"],
+    ["POST", "/api/training/admin/questions/1/deactivate"],
+    ["POST", "/api/training/admin/assignments"],
+    ["DELETE", "/api/training/admin/assignments/1"],
+    ["PUT", "/api/training/admin/matrix"],
+    ["POST", "/api/training/admin/matrix/apply"]
+  ];
+  for (const [method, url] of routes) {
+    const missing = await fetch(`${base}${url}`, { method, headers: { cookie: admin.cookie, "content-type": "application/json" }, body: "{}" });
+    assert.equal(missing.status, 403, `${method} ${url} without token`);
+    const forged = await admin.raw(method, url, {}, { "x-csrf-token": "forged-token" });
+    assert.equal(forged.status, 403, `${method} ${url} with a forged token`);
+  }
+  assert.equal(withDb((db) => db.prepare("SELECT status FROM training_courses WHERE id = 1").get().status), "published", "nothing changed");
+});
+
+test("the acting user always comes from the session, never from the request", async () => {
+  const learner = await login("consultant.demo");
+  const victim = await login("employee.demo");
+  const before = withDb((db) => db.prepare("SELECT COUNT(*) AS n FROM lesson_progress WHERE user_id = ?").get(victim.user.id).n);
+  await learner.post(`/api/training/courses/incident-reporting/lessons/1/complete?userId=${victim.user.id}`, { userId: victim.user.id, username: "employee.demo" });
+  const after = withDb((db) => db.prepare("SELECT COUNT(*) AS n FROM lesson_progress WHERE user_id = ?").get(victim.user.id).n);
+  assert.equal(after, before, "a userId in the body or query is ignored");
+  const mine = await learner.get(`/api/training/me?userId=${victim.user.id}`);
+  assert.ok(!JSON.stringify(mine.body).includes("Employee Demo"));
+});
+
+test("training input is validated and oversized bodies are rejected", async () => {
+  const admin = await login("security.admin");
+  assert.equal((await admin.get("/api/training/attempts/0/result")).status, 400);
+  assert.equal((await admin.get("/api/training/attempts/1e3/result")).status, 400);
+  assert.equal((await admin.get("/api/training/team/users/-4")).status, 400);
+  assert.equal((await admin.get("/api/training/courses/phishing-social-engineering/lessons/abc")).status, 400);
+  assert.equal((await admin.get("/api/training/courses?status=hacked")).status, 400);
+  assert.equal((await admin.raw("POST", "/api/training/admin/courses", [1, 2, 3])).status, 400, "arrays are not accepted as bodies");
+  const malformed = await fetch(`${base}/api/training/admin/courses`, { method: "POST", headers: { cookie: admin.cookie, "x-csrf-token": admin.csrf, "content-type": "application/json" }, body: "{not json" });
+  assert.equal(malformed.status, 400);
+  const huge = await admin.post("/api/training/admin/courses", { ...newCourse, description: "x".repeat(70 * 1024) });
+  assert.equal(huge.status, 413);
+  const courseId = withDb((db) => db.prepare("SELECT id FROM training_courses WHERE status = 'draft' LIMIT 1").get().id);
+  const bigLesson = await admin.post(`/api/training/admin/courses/${courseId}/lessons`, { title: "Big", bodyMarkdown: "y".repeat(300 * 1024), estimatedMinutes: 5, sources: [] });
+  assert.equal(bigLesson.status, 413);
+  assert.equal((await admin.raw("PATCH", "/api/training/courses")).status, 405);
+});
+
+test("audit events use the real actor and never contain answers, passwords or session ids", async () => {
+  const rows = withDb((db) => db.prepare("SELECT actor_user_id, action, target FROM audit_events WHERE action LIKE 'TRAINING_%'").all());
+  const actions = new Set(rows.map((row) => row.action));
+  for (const expected of ["TRAINING_LESSON_COMPLETED", "TRAINING_QUIZ_STARTED", "TRAINING_QUIZ_SUBMITTED", "TRAINING_QUIZ_PASSED", "TRAINING_QUIZ_FAILED", "TRAINING_CERTIFICATE_ISSUED",
+    "TRAINING_COURSE_CREATED", "TRAINING_COURSE_PUBLISHED", "TRAINING_COURSE_ARCHIVED", "TRAINING_QUESTION_CREATED", "TRAINING_QUESTION_UPDATED",
+    "TRAINING_ASSIGNED", "TRAINING_MATRIX_UPDATED", "TRAINING_REMINDER_SENT", "TRAINING_EVIDENCE_EXPORTED", "TRAINING_RECORD_EXPORTED", "TRAINING_ACCESS_DENIED"]) {
+    assert.ok(actions.has(expected), `${expected} is audited`);
+  }
+  assert.ok(rows.every((row) => row.actor_user_id !== null), "every training event has a real actor");
+  assert.ok(!rows.some((row) => /training\.admin/.test(row.target)), "no hard-coded actor names");
+  const optionTexts = withDb((db) => db.prepare("SELECT text FROM training_options WHERE length(text) > 25").all().map((row) => row.text));
+  const sessions = withDb((db) => db.prepare("SELECT id, csrf_token FROM sessions").all());
+  for (const row of rows) {
+    assert.ok(!optionTexts.some((text) => row.target.includes(text)), `answer text leaked into audit: ${row.target}`);
+    assert.ok(!Object.values(PASSWORDS).some((password) => row.target.includes(password)), "password in audit");
+    assert.ok(!sessions.some((session) => row.target.includes(session.id) || row.target.includes(session.csrf_token)), "session secret in audit");
+  }
+});
