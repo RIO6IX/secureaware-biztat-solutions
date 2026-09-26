@@ -41,6 +41,7 @@ export function reportsPage(container) {
 
     return h("div", { class: "stack" },
       pageHeader("Training evidence", "Completion, pass rates and overdue training, ready for ISO/IEC 27001 A.6.3 and NIST CSF PR.AT evidence.", [
+        h("a", { class: "button", href: "#/training/research" }, "Research basis"),
         h("button", { type: "button", class: "primary", on: { click: () => download(`/api/training/admin/reports.csv?${query}`, "training-evidence.csv").then(() => toast("Evidence exported. The export has been recorded in the audit log.")).catch((error) => toast(error.message, "error")) } }, "Export CSV")
       ]),
       form,

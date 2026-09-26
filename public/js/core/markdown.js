@@ -1,6 +1,7 @@
 // Safe markdown renderer. It builds DOM nodes directly and never parses HTML, so any
 // markup typed into a lesson shows up as literal text. Allowed output elements:
-// h2, h3, p, ul, ol, li, strong, em, code, a (http/https only), blockquote and callout asides.
+// h2, h3, p, ul, ol, li, strong, em, code, pre (fenced code), a (http/https only), blockquote
+// and callout asides.
 import { h, isSafeHref } from "./dom.js";
 
 const CALLOUTS = {
@@ -83,6 +84,21 @@ export function renderMarkdown(source) {
 
   while (index < lines.length) {
     const line = lines[index];
+    if (line.startsWith("```")) {
+      flushParagraph();
+      const label = line.slice(3).trim();
+      const code = [];
+      index += 1;
+      while (index < lines.length && !lines[index].startsWith("```")) {
+        code.push(lines[index]);
+        index += 1;
+      }
+      index += 1;
+      fragment.append(h("figure", { class: "code-block" },
+        label ? h("figcaption", {}, label) : null,
+        h("pre", { tabindex: "0" }, h("code", {}, code.join("\n")))));
+      continue;
+    }
     const heading = /^(#{1,3})\s+(.+)$/.exec(line);
     if (heading) {
       flushParagraph();

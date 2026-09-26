@@ -155,7 +155,8 @@ Pretexters build a story first: a new auditor, a courier, IT support, a client's
     },
     {
       title: "Smishing, vishing, QR codes and MFA fatigue",
-      estimatedMinutes: 7,
+      estimatedMinutes: 8,
+      interactive: "spoofed-login",
       body: `## Your phone is now the main target
 
 The 2026 DBIR reports that mobile lures – voice calls and text messages – had a **40% higher median click rate** than email in phishing simulations. Small screens hide addresses and we tend to react faster on a phone.
@@ -189,7 +190,11 @@ If someone has stolen your password, they may trigger sign-in prompts again and 
 > [!DONT] Don't do this
 > Never approve a prompt "just to make it stop", and never read a one-time code out to anyone who calls you.
 
-Number matching (typing the number shown on the login screen) makes blind approval harder. Phishing-resistant MFA such as FIDO2 security keys and passkeys is stronger still – you will learn more in the *Passwords, Passphrases and MFA* course.`,
+Number matching (typing the number shown on the login screen) makes blind approval harder. Phishing-resistant MFA such as FIDO2 security keys and passkeys is stronger still – you will learn more in the *Passwords, Passphrases and MFA* course.
+
+## Spot the fake login page
+
+A QR code, text or call often leads to a copy of a real login page. The page can look perfect – the address bar is where the difference shows. Try the exercise below.`,
       keyTakeaways: [
         "Treat unexpected texts, calls and QR codes with the same suspicion as email.",
         "Call back on a number you look up yourself; IT will never ask for your password or MFA code.",

@@ -10,6 +10,7 @@ import { adminCoursesPage, newCoursePage, courseEditorPage } from "./admin-cours
 import { assignmentsPage } from "./admin-assign.js";
 import { matrixPage } from "./admin-matrix.js";
 import { teamPage } from "./team.js";
+import { researchPage } from "./research.js";
 import { reportsPage } from "./reports.js";
 import { ADMIN_ROLES, MANAGER_ROLES } from "./common.js";
 
@@ -18,6 +19,7 @@ export default {
     nav({ section: "Learning", label: "Security training", href: "#/training", icon: "🎓", card: "Assigned courses, lessons and quizzes." });
     nav({ section: "Learning", label: "My learning", href: "#/my-learning", icon: "📈", card: "Your progress, attempts and certificates." });
     nav({ section: "Learning", label: "Verify a certificate", href: "#/training/verify", icon: "✔" });
+    nav({ section: "Learning", label: "Research basis", href: "#/training/research", icon: "📚" });
     nav({ section: "Team", label: "Team training", href: "#/training/team", icon: "👥", roles: MANAGER_ROLES, card: "Who is overdue or needs support in your team." });
     nav({ section: "Training admin", label: "Evidence & reports", href: "#/training/admin/reports", icon: "📊", roles: ADMIN_ROLES, card: "Completion evidence and CSV export." });
     nav({ section: "Training admin", label: "Course builder", href: "#/training/admin/courses", icon: "✎", roles: ADMIN_ROLES, card: "Courses, lessons and question banks." });
@@ -28,6 +30,7 @@ export default {
     route("/training", cataloguePage, { title: "Security training" });
     route("/my-learning", myLearningPage, { title: "My learning" });
     route("/training/verify", verifyPage, { title: "Verify a certificate" });
+    route("/training/research", researchPage, { title: "Research basis" });
     route("/training/team", teamPage, { title: "Team training", roles: MANAGER_ROLES });
     route("/training/admin/reports", reportsPage, { title: "Training evidence", roles: ADMIN_ROLES });
     route("/training/attempts/:id", resultsPage, { title: "Quiz results" });

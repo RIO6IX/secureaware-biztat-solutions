@@ -57,6 +57,10 @@
 .lesson-body h2:first-child { margin-top: 0; }
 .lesson-body li { margin-bottom: var(--space-1); }
 .lesson-body code { background: #eef1f6; border-radius: 4px; padding: 1px 5px; font-size: 0.92em; overflow-wrap: anywhere; }
+.code-block { margin: var(--space-4) 0; }
+.code-block figcaption { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-bottom: var(--space-1); }
+.code-block pre { margin: 0; background: #0f172a; color: #e2e8f0; border-radius: var(--radius-small); padding: var(--space-3) var(--space-4); overflow-x: auto; font-size: 0.85rem; line-height: 1.5; }
+.code-block code { background: none; padding: 0; color: inherit; }
 .lesson-body blockquote { margin: var(--space-4) 0; padding-left: var(--space-4); border-left: 4px solid var(--border-strong); color: var(--text-muted); }
 .callout { margin: var(--space-4) 0; padding: var(--space-4); border-radius: var(--radius); border: 1px solid; border-left-width: 6px; }
 .callout p:last-child { margin-bottom: 0; }
@@ -99,6 +103,7 @@
 .flag-feedback li { background: var(--danger-soft); border-left: 4px solid var(--danger); padding: var(--space-2) var(--space-3); border-radius: var(--radius-small); }
 .choice-grid { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .choice-card { display: grid; gap: var(--space-2); text-align: left; white-space: normal; padding: var(--space-4); min-height: 0; font-weight: 400; }
+.choice-card:disabled { opacity: 1; cursor: default; color: var(--text); }
 .choice-card.correct { border-color: var(--success); background: var(--success-soft); }
 .choice-card.incorrect { border-color: var(--danger); background: var(--danger-soft); }
 .mock-login { border: 1px solid var(--border); border-radius: var(--radius-small); padding: var(--space-3); background: #fff; display: grid; gap: var(--space-2); font-size: 0.85rem; }

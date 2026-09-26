@@ -1,6 +1,11 @@
 import phishing from "./phishing-social-engineering.js";
+import passwords from "./passwords-mfa.js";
+import dataHandling from "./handling-client-personal-data.js";
+import remoteWork from "./safe-remote-hybrid-work.js";
+import incidents from "./incident-reporting.js";
+import secureDevelopment from "./secure-development-essentials.js";
 
-export const courses = [phishing];
+export const courses = [phishing, passwords, dataHandling, remoteWork, incidents, secureDevelopment];
 
 // Training Needs Matrix seed. role "*" means every role; department null means every department.
 export const matrixSeed = [
