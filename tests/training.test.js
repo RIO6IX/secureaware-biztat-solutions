@@ -107,3 +107,28 @@ test("learner catalogue and lesson reader work from the session identity", async
   assert.equal((await employee.get("/api/training/courses/BAD%20SLUG")).status, 400);
   assert.equal((await employee.get("/api/training/courses?tab=everything")).status, 400);
 });
+
+test("department managers only see their own department", async () => {
+  const employee = await login("employee.demo");
+  assert.equal((await employee.get("/api/training/team")).status, 403);
+
+  const consultant = await login("consultant.demo");
+  const financeManager = await login("manager.demo");
+  const team = await financeManager.get("/api/training/team?department=Consulting");
+  assert.equal(team.status, 200);
+  assert.equal(team.body.department, "Finance");
+  assert.ok(team.body.members.every((member) => member.user.department === "Finance"));
+  assert.ok(team.body.members.some((member) => member.user.id === employee.user.id));
+
+  assert.equal((await financeManager.get(`/api/training/team/users/${consultant.user.id}`)).status, 404);
+  assert.equal((await financeManager.get(`/api/training/team/users/${employee.user.id}`)).status, 200);
+  assert.equal((await financeManager.get("/api/training/team/users/abc")).status, 400);
+
+  const consultingManager = await login("manager.consulting");
+  assert.equal((await consultingManager.get(`/api/training/team/users/${consultant.user.id}`)).status, 200);
+  assert.equal((await consultingManager.get(`/api/training/team/users/${employee.user.id}`)).status, 404);
+
+  const admin = await login("security.admin");
+  const all = await admin.get("/api/training/team");
+  assert.ok(new Set(all.body.members.map((member) => member.user.department)).size >= 3);
+});

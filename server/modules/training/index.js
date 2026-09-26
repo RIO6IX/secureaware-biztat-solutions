@@ -3,6 +3,7 @@ import { seedCourses } from "./seed.js";
 import { createStore } from "./store.js";
 import { asObject } from "./validate.js";
 import registerLearner from "./routes/learner.js";
+import registerTeam from "./routes/team.js";
 
 export const prefix = "/api/training/";
 
@@ -27,6 +28,7 @@ export function init(shared) {
   store = createStore(foundation.db);
   const deps = { route, store, foundation };
   registerLearner(deps);
+  registerTeam(deps);
 }
 
 export async function handle(request, response, url, context) {
