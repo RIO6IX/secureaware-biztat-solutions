@@ -5,6 +5,7 @@ import { asObject } from "./validate.js";
 import registerLearner from "./routes/learner.js";
 import registerTeam from "./routes/team.js";
 import registerQuiz from "./routes/quiz.js";
+import registerMe from "./routes/me.js";
 
 export const prefix = "/api/training/";
 
@@ -31,6 +32,7 @@ export function init(shared) {
   registerLearner(deps);
   registerTeam(deps);
   registerQuiz(deps);
+  registerMe(deps);
 }
 
 export async function handle(request, response, url, context) {

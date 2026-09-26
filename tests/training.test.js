@@ -257,6 +257,7 @@ test("cooldown and the attempt limit return 429", async () => {
     assert.equal(result.body.attempt.passed, false);
     assert.equal(result.body.certificateCode, null);
     assert.ok(result.body.topicsToReview.length >= 1);
+    assert.ok(result.body.review.every((item) => item.explanation === null), "explanations for wrong answers stay hidden until the course is passed");
     assertNoCorrectness(result.body, "failed result");
     return result.body;
   };
@@ -298,4 +299,29 @@ test("quiz rate limiter blocks bursts per user and recovers after the window", a
   assert.equal(allow("7:quiz-start", 30).allowed, false);
   assert.ok(allow("8:quiz-start", 30).allowed, "other users are unaffected");
   assert.ok(allow("7:quiz-start", 1001).allowed);
+});
+
+test("certificates are private to the holder and verification reveals no personal data", async () => {
+  const holder = await login("consultant.demo");
+  const me = await holder.get("/api/training/me");
+  assert.equal(me.status, 200);
+  assert.equal(me.body.summary.completed, 1);
+  const code = me.body.certificates[0].code;
+  assertNoCorrectness(me.body, "my learning");
+
+  const own = await holder.get(`/api/training/me/certificates/${code}`);
+  assert.equal(own.status, 200);
+  assert.equal(own.body.certificate.learnerName, "Consultant Demo");
+  assert.equal(own.body.certificate.score, 100);
+
+  const stranger = await login("employee.demo");
+  assert.equal((await stranger.get(`/api/training/me/certificates/${code}`)).status, 404);
+  const verified = await stranger.get(`/api/training/certificates/${code}`);
+  assert.deepEqual(Object.keys(verified.body).sort(), ["course", "issuedOn", "valid"]);
+  assert.equal(verified.body.valid, true);
+  assert.ok(!JSON.stringify(verified.body).includes("Consultant"));
+  const fake = await stranger.get("/api/training/certificates/SA-0000-0000-0000-0000");
+  assert.deepEqual(fake.body, { valid: false });
+  const junk = await stranger.get("/api/training/certificates/%3Cscript%3E");
+  assert.deepEqual(junk.body, { valid: false });
 });

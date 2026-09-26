@@ -78,7 +78,7 @@ export default function registerQuiz({ route, store, foundation }) {
     if (outcome.certificateCode) ctx.audit("TRAINING_CERTIFICATE_ISSUED", `${course.slug} attempt ${attempt.attempt_number}`);
     const state = store.courseState(ctx.user, course);
     return ctx.send(200, {
-      ...quiz.resultView(quiz.q.attemptById.get(attempt.id), course),
+      ...quiz.resultView(quiz.q.attemptById.get(attempt.id), course, { coursePassed: state.status === "passed" }),
       attemptsLeft: state.attemptsLeft,
       cooldownUntil: state.cooldownUntil
     });
@@ -93,7 +93,7 @@ export default function registerQuiz({ route, store, foundation }) {
     const course = store.q.courseById.get(attempt.course_id);
     const state = store.courseState(owner, course);
     return ctx.send(200, {
-      ...quiz.resultView(attempt, course),
+      ...quiz.resultView(attempt, course, { coursePassed: state.status === "passed" }),
       learner: { displayName: owner.display_name },
       attemptsLeft: state.attemptsLeft,
       cooldownUntil: state.cooldownUntil

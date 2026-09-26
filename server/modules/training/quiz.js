@@ -69,7 +69,7 @@ export function createQuiz(db) {
       throw httpError(429, `You have used all ${course.max_attempts} attempts for this course. Ask the Security/HR team if you need another attempt.`);
     }
     if (state.cooldownUntil) {
-      const error = httpError(429, `Please review the lessons first. You can try again after ${new Date(state.cooldownUntil).toISOString().slice(11, 16)} UTC.`);
+      const error = httpError(429, `Please review the lessons first. A new attempt opens ${course.cooldown_minutes} minutes after a failed one.`);
       error.retryAt = state.cooldownUntil;
       throw error;
     }
@@ -164,9 +164,11 @@ export function createQuiz(db) {
     return { score, passed, certificateCode };
   }
 
-  // Review after submission: the learner's own choice, whether it was right, the
-  // explanation and the lesson to revisit. The correct option itself is never named.
-  function resultView(attempt, course) {
+  // Review after submission: the learner's own choice, whether it was right and the lesson
+  // to revisit. The correct option is never named. Until the learner has passed the course,
+  // explanations are withheld for wrong answers because they would give away the answer to
+  // questions that can be served again on a retake.
+  function resultView(attempt, course, { coursePassed = false } = {}) {
     const answers = new Map(q.answers.all(attempt.id).map((row) => [row.question_id, row]));
     const review = parseIds(attempt.question_ids).map((questionId, index) => {
       const question = q.question.get(questionId);
@@ -180,7 +182,7 @@ export function createQuiz(db) {
         scenarioText: question.scenario_text,
         yourAnswer: answer ? JSON.parse(answer.selected_option_ids).map((optionId) => texts.get(optionId)) : [],
         answeredCorrectly: answer ? Boolean(answer.correct) : false,
-        explanation: question.explanation,
+        explanation: coursePassed || answer?.correct ? question.explanation : null,
         lesson: lesson ? { position: lesson.position, title: lesson.title } : null
       };
     });
