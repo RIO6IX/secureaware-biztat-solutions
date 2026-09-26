@@ -41,8 +41,9 @@ async function login(username) {
   const body = await response.json();
   const cookie = response.headers.get("set-cookie").split(";", 1)[0];
   const call = async (method, url, payload, extraHeaders = {}) => {
-    const headers = { cookie, ...extraHeaders };
+    const headers = { cookie };
     if (method !== "GET") headers["x-csrf-token"] = body.csrfToken;
+    Object.assign(headers, extraHeaders);
     if (payload !== undefined) headers["content-type"] = "application/json";
     const res = await fetch(`${base}${url}`, { method, headers, body: payload === undefined ? undefined : JSON.stringify(payload) });
     const text = await res.text();
@@ -131,4 +132,26 @@ test("department managers only see their own department", async () => {
   const admin = await login("security.admin");
   const all = await admin.get("/api/training/team");
   assert.ok(new Set(all.body.members.map((member) => member.user.department)).size >= 3);
+});
+
+async function completeAllLessons(session, slug) {
+  const course = await session.get(`/api/training/courses/${slug}`);
+  for (const lesson of course.body.lessons) {
+    const result = await session.post(`/api/training/courses/${slug}/lessons/${lesson.position}/complete`);
+    assert.equal(result.status, 200);
+  }
+}
+
+test("lesson progress is recorded on the server in order and unlocks the quiz", async () => {
+  const learner = await login("consultant.demo");
+  const slug = "phishing-social-engineering";
+  assert.equal((await learner.post(`/api/training/courses/${slug}/lessons/3/complete`)).status, 409);
+  const noCsrf = await learner.raw("POST", `/api/training/courses/${slug}/lessons/1/complete`, {}, { "x-csrf-token": "wrong" });
+  assert.equal(noCsrf.status, 403);
+  await completeAllLessons(learner, slug);
+  const again = await learner.post(`/api/training/courses/${slug}/lessons/1/complete`);
+  assert.equal(again.status, 200);
+  const course = await learner.get(`/api/training/courses/${slug}`);
+  assert.equal(course.body.quiz.unlocked, true);
+  assert.equal(course.body.state.status, "in_progress");
 });

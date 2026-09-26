@@ -86,4 +86,23 @@ export default function registerLearner({ route, store }) {
       nav: { position: lesson.position, total, previous: lesson.position > 1 ? lesson.position - 1 : null, next: lesson.position < total ? lesson.position + 1 : null }
     });
   });
+
+  // Completion is recorded on the server and must follow lesson order, so the quiz
+  // unlock cannot be skipped by calling the API directly.
+  route("POST", "/courses/:slug/lessons/:position/complete", (ctx) => {
+    const course = accessibleCourse(ctx);
+    if (!course) return;
+    if (!/^[1-9]\d{0,2}$/.test(ctx.params.position)) fail("Lesson number must be a positive integer");
+    const lesson = store.q.lessonAt.get(course.id, Number(ctx.params.position));
+    if (!lesson) return ctx.send(404, { message: "Lesson not found" });
+    const done = new Set(store.q.completedLessons.all(ctx.user.id, course.id).map((row) => row.position));
+    for (let position = 1; position < lesson.position; position += 1) {
+      if (!done.has(position)) return ctx.send(409, { message: `Complete lesson ${position} first` });
+    }
+    const result = store.q.insertProgress.run(ctx.user.id, lesson.id, new Date().toISOString());
+    if (result.changes) ctx.audit("TRAINING_LESSON_COMPLETED", `${course.slug}#${lesson.position}`);
+    const total = store.q.lessonCount.get(course.id).n;
+    const completed = done.size + (done.has(lesson.position) ? 0 : 1);
+    return ctx.send(200, { completed: true, progress: { completed, total }, quizUnlocked: completed >= total });
+  });
 }

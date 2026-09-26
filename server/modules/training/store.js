@@ -78,6 +78,7 @@ export function createStore(db) {
       WHERE (target_type = 'department' AND target_value = ?) OR (target_type = 'role' AND target_value = ?) OR (target_type = 'user' AND target_value = ?)
       GROUP BY course_id`),
     attempts: db.prepare("SELECT * FROM quiz_attempts WHERE user_id = ? AND course_id = ? ORDER BY attempt_number"),
+    insertProgress: db.prepare("INSERT OR IGNORE INTO lesson_progress (user_id,lesson_id,completed_at) VALUES (?,?,?)"),
     certificateForCourse: db.prepare("SELECT certificate_code FROM certificates WHERE user_id = ? AND course_id = ? ORDER BY id LIMIT 1"),
     expireStale: db.prepare("UPDATE quiz_attempts SET status = 'expired' WHERE status = 'in_progress' AND expires_at <= ?"),
     userById: db.prepare("SELECT id, username, display_name, role, department, created_at FROM users WHERE id = ? AND active = 1"),
