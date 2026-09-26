@@ -6,6 +6,7 @@ import registerLearner from "./routes/learner.js";
 import registerTeam from "./routes/team.js";
 import registerQuiz from "./routes/quiz.js";
 import registerMe from "./routes/me.js";
+import registerAdminCourses from "./routes/admin-courses.js";
 
 export const prefix = "/api/training/";
 
@@ -28,11 +29,13 @@ export function init(shared) {
   migrate(foundation.db);
   seedCourses(foundation.db);
   store = createStore(foundation.db);
-  const deps = { route, store, foundation };
+  // hooks lets one route group react to another (e.g. publishing triggers matrix assignment).
+  const deps = { route, store, foundation, hooks: {} };
   registerLearner(deps);
   registerTeam(deps);
   registerQuiz(deps);
   registerMe(deps);
+  registerAdminCourses(deps);
 }
 
 export async function handle(request, response, url, context) {

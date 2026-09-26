@@ -325,3 +325,86 @@ test("certificates are private to the holder and verification reveals no persona
   const junk = await stranger.get("/api/training/certificates/%3Cscript%3E");
   assert.deepEqual(junk.body, { valid: false });
 });
+
+const newCourse = {
+  title: "Test Course for Builder",
+  category: "Testing",
+  level: "Foundation",
+  summary: "A course created by the automated tests.",
+  description: "Created by tests.",
+  learningObjectives: ["Check the builder"],
+  durationMinutes: 10,
+  audienceNote: "",
+  cover: "shield",
+  passMark: 80,
+  maxAttempts: 3,
+  cooldownMinutes: 0,
+  questionsPerAttempt: 2,
+  openToAll: true
+};
+const newQuestion = (prompt, lessonId = null) => ({
+  type: "single", prompt, scenarioText: "", explanation: "Because the test says so.", difficulty: 1, lessonId,
+  options: [{ text: "Right answer", isCorrect: true }, { text: "Wrong answer", isCorrect: false }]
+});
+
+test("employees and managers cannot use the course builder endpoints", async () => {
+  for (const username of ["employee.demo", "manager.demo"]) {
+    const session = await login(username);
+    assert.equal((await session.get("/api/training/admin/courses")).status, 403, username);
+    assert.equal((await session.post("/api/training/admin/courses", newCourse)).status, 403, username);
+    assert.equal((await session.put("/api/training/admin/questions/1", newQuestion("Changed?"))).status, 403, username);
+    assert.equal((await session.post("/api/training/admin/courses/1/publish")).status, 403, username);
+  }
+});
+
+test("course builder validates questions and versions published courses", async () => {
+  const admin = await login("security.admin");
+  assert.equal((await admin.post("/api/training/admin/courses", { ...newCourse, passMark: "high" })).status, 400);
+  const created = await admin.post("/api/training/admin/courses", newCourse);
+  assert.equal(created.status, 201);
+  const courseId = created.body.course.id;
+  assert.equal(created.body.course.status, "draft");
+
+  assert.equal((await admin.post(`/api/training/admin/courses/${courseId}/publish`)).status, 400, "cannot publish an empty course");
+  const withLesson = await admin.post(`/api/training/admin/courses/${courseId}/lessons`, {
+    title: "Only lesson", bodyMarkdown: "## Heading\n\nSome <script>alert(1)</script> text for the lesson body.", keyTakeaways: ["One"], estimatedMinutes: 3,
+    interactive: null, sources: [{ title: "OWASP Top 10", url: "https://owasp.org/Top10/" }]
+  });
+  assert.equal(withLesson.status, 201);
+  const lessonId = withLesson.body.course.lessons[0].id;
+  assert.equal((await admin.post(`/api/training/admin/courses/${courseId}/lessons`, { title: "Bad", bodyMarkdown: "x".repeat(30), estimatedMinutes: 2, sources: [{ title: "Bad link", url: "javascript:alert(1)" }] })).status, 400);
+
+  const noCorrect = { ...newQuestion("No correct option?"), options: [{ text: "A", isCorrect: false }, { text: "B", isCorrect: false }] };
+  assert.equal((await admin.post(`/api/training/admin/courses/${courseId}/questions`, noCorrect)).status, 400);
+  const twoCorrect = { ...newQuestion("Two correct on single?"), options: [{ text: "A", isCorrect: true }, { text: "B", isCorrect: true }] };
+  assert.equal((await admin.post(`/api/training/admin/courses/${courseId}/questions`, twoCorrect)).status, 400);
+  assert.equal((await admin.post(`/api/training/admin/courses/${courseId}/questions`, newQuestion("Wrong lesson link?", 999999))).status, 400);
+  const q1 = await admin.post(`/api/training/admin/courses/${courseId}/questions`, newQuestion("First question?", lessonId));
+  await admin.post(`/api/training/admin/courses/${courseId}/questions`, newQuestion("Second question?", lessonId));
+  await admin.post(`/api/training/admin/courses/${courseId}/questions`, newQuestion("Third question?", lessonId));
+
+  const published = await admin.post(`/api/training/admin/courses/${courseId}/publish`);
+  assert.equal(published.status, 200);
+  assert.equal(published.body.course.version, 1);
+
+  // A learner takes the course so the questions become "used".
+  const learner = await login("system.admin");
+  const slug = published.body.course.slug;
+  assert.equal((await learner.post(`/api/training/courses/${slug}/lessons/1/complete`)).status, 200);
+  const attempt = (await learner.post(`/api/training/courses/${slug}/attempts`)).body.attempt;
+  await learner.post(`/api/training/attempts/${attempt.id}/submit`, { answers: answersFor(attempt, true) });
+
+  const edited = await admin.put(`/api/training/admin/questions/${q1.body.questionId}`, newQuestion("First question, reworded?", lessonId));
+  assert.equal(edited.status, 200);
+  const used = withDb((db) => db.prepare("SELECT COUNT(*) AS n FROM quiz_attempts a, json_each(a.question_ids) j WHERE a.id = ? AND j.value = ?").get(attempt.id, q1.body.questionId).n);
+  if (used) {
+    assert.equal(edited.body.replaced, true, "used questions are replaced, not edited");
+    assert.notEqual(edited.body.questionId, q1.body.questionId);
+  }
+  assert.equal(edited.body.course.version, 2, "editing a published course's questions bumps the version");
+  const review = await learner.get(`/api/training/attempts/${attempt.id}/result`);
+  assert.equal(review.body.attempt.courseVersion, 1, "earlier attempts keep their version");
+  assert.equal((await admin.del(`/api/training/admin/lessons/${lessonId}`)).status, 409, "lessons of a published course cannot be deleted");
+  assert.equal((await admin.post(`/api/training/admin/courses/${courseId}/archive`)).status, 200);
+  assert.equal((await learner.get(`/api/training/courses/${slug}`)).status, 404, "archived courses disappear for learners");
+});

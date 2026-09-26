@@ -6,6 +6,8 @@ export const ADMIN_ROLES = ["Security/HR Admin", "System Admin"];
 export const QUESTION_TYPES = ["single", "multi", "true_false", "scenario"];
 export const COURSE_STATUSES = ["draft", "published", "archived"];
 export const LEVELS = ["Foundation", "Intermediate", "Advanced"];
+export const COVERS = ["phishing", "passwords", "data", "remote", "incident", "code", "shield"];
+export const INTERACTIVE_KEYS = ["phishing-email", "spoofed-login", "password-explorer", "data-classifier", "incident-triage", "secure-code-review"];
 
 export function migrate(db) {
   db.exec(`
