@@ -80,3 +80,30 @@ test("schema migration and seed are safe to run more than once", () => {
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM training_courses").get().n, courses.length);
 });
 
+
+test("unauthenticated requests to the training API return 401", async () => {
+  for (const url of ["/api/training/courses", "/api/training/courses/phishing-social-engineering", "/api/training/me"]) {
+    const response = await fetch(`${base}${url}`);
+    assert.equal(response.status, 401, url);
+  }
+  const post = await fetch(`${base}/api/training/courses/phishing-social-engineering/attempts`, { method: "POST" });
+  assert.equal(post.status, 401);
+});
+
+test("learner catalogue and lesson reader work from the session identity", async () => {
+  const employee = await login("employee.demo");
+  const catalogue = await employee.get("/api/training/courses?tab=all");
+  assert.equal(catalogue.status, 200);
+  assert.ok(catalogue.body.courses.some((course) => course.slug === "phishing-social-engineering"));
+  const course = await employee.get("/api/training/courses/phishing-social-engineering");
+  assert.equal(course.status, 200);
+  assert.ok(course.body.lessons.length >= 4);
+  assert.equal(course.body.quiz.unlocked, false);
+  const lesson = await employee.get("/api/training/courses/phishing-social-engineering/lessons/2");
+  assert.equal(lesson.status, 200);
+  assert.equal(lesson.body.nav.previous, 1);
+  assert.ok(lesson.body.lesson.sources.length >= 1);
+  assert.equal((await employee.get("/api/training/courses/not-a-course")).status, 404);
+  assert.equal((await employee.get("/api/training/courses/BAD%20SLUG")).status, 400);
+  assert.equal((await employee.get("/api/training/courses?tab=everything")).status, 400);
+});
