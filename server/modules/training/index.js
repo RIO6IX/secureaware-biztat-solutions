@@ -4,6 +4,7 @@ import { createStore } from "./store.js";
 import { asObject } from "./validate.js";
 import registerLearner from "./routes/learner.js";
 import registerTeam from "./routes/team.js";
+import registerQuiz from "./routes/quiz.js";
 
 export const prefix = "/api/training/";
 
@@ -29,6 +30,7 @@ export function init(shared) {
   const deps = { route, store, foundation };
   registerLearner(deps);
   registerTeam(deps);
+  registerQuiz(deps);
 }
 
 export async function handle(request, response, url, context) {

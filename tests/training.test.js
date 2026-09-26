@@ -155,3 +155,147 @@ test("lesson progress is recorded on the server in order and unlocks the quiz", 
   assert.equal(course.body.quiz.unlocked, true);
   assert.equal(course.body.state.status, "in_progress");
 });
+
+const FORBIDDEN_KEYS = ["is_correct", "isCorrect", "correctOptionIds", "correctOptions", "correctAnswer", "answerIndex"];
+function assertNoCorrectness(value, where) {
+  const walk = (node, trail) => {
+    if (Array.isArray(node)) return node.forEach((item, index) => walk(item, `${trail}[${index}]`));
+    if (node && typeof node === "object") {
+      for (const [key, child] of Object.entries(node)) {
+        assert.ok(!FORBIDDEN_KEYS.includes(key), `${where}: correctness key "${key}" exposed at ${trail}`);
+        walk(child, `${trail}.${key}`);
+      }
+    }
+  };
+  walk(value, "$");
+}
+
+function answerKey() {
+  const db = new DatabaseSync(process.env.SECUREAWARE_DB);
+  const rows = db.prepare("SELECT question_id, id, is_correct FROM training_options").all();
+  db.close();
+  const key = new Map();
+  for (const row of rows) {
+    if (!key.has(row.question_id)) key.set(row.question_id, { right: [], wrong: [] });
+    key.get(row.question_id)[row.is_correct ? "right" : "wrong"].push(row.id);
+  }
+  return key;
+}
+
+function withDb(run) {
+  const db = new DatabaseSync(process.env.SECUREAWARE_DB);
+  try {
+    return run(db);
+  } finally {
+    db.close();
+  }
+}
+
+const answersFor = (attempt, correct) => {
+  const key = answerKey();
+  return attempt.questions.map((question) => ({
+    questionId: question.id,
+    optionIds: correct ? key.get(question.id).right : [key.get(question.id).wrong[0]]
+  }));
+};
+
+test("the quiz stays locked until the server has every lesson complete", async () => {
+  const employee = await login("employee.demo");
+  const response = await employee.post("/api/training/courses/phishing-social-engineering/attempts");
+  assert.equal(response.status, 403);
+});
+
+test("quiz answers are validated against the questions served in the attempt", async () => {
+  const learner = await login("consultant.demo");
+  const started = await learner.post("/api/training/courses/phishing-social-engineering/attempts");
+  assert.equal(started.status, 201);
+  const attempt = started.body.attempt;
+  assert.equal(attempt.questions.length, 10);
+  assertNoCorrectness(started.body, "quiz start");
+  const options = attempt.questions[0].options.map((option) => option.id);
+  assert.ok(options.length >= 2);
+
+  const resumed = await learner.post("/api/training/courses/phishing-social-engineering/attempts");
+  assert.equal(resumed.status, 200);
+  assert.equal(resumed.body.attempt.id, attempt.id);
+  assert.deepEqual(resumed.body.attempt.questions[0].options.map((option) => option.id), options, "option order is stable on resume");
+
+  const served = new Set(attempt.questions.map((question) => question.id));
+  const unserved = [...answerKey().keys()].find((questionId) => !served.has(questionId));
+  const good = answersFor(attempt, true);
+  const withForeign = [...good.slice(1), { questionId: unserved, optionIds: answerKey().get(unserved).right }];
+  assert.equal((await learner.post(`/api/training/attempts/${attempt.id}/submit`, { answers: withForeign })).status, 400);
+  assert.equal((await learner.post(`/api/training/attempts/${attempt.id}/submit`, { answers: good.slice(1) })).status, 400);
+  const wrongOption = good.map((answer, index) => (index === 0 ? { ...answer, optionIds: [answerKey().get(good[1].questionId).right[0]] } : answer));
+  assert.equal((await learner.post(`/api/training/attempts/${attempt.id}/submit`, { answers: wrongOption })).status, 400);
+  assert.equal((await learner.post(`/api/training/attempts/${attempt.id}/submit`, { answers: "all" })).status, 400);
+});
+
+test("server scoring is correct and a pass issues a certificate", async () => {
+  const learner = await login("consultant.demo");
+  const started = await learner.post("/api/training/courses/phishing-social-engineering/attempts");
+  const attempt = started.body.attempt;
+  const submitted = await learner.post(`/api/training/attempts/${attempt.id}/submit`, { answers: answersFor(attempt, true) });
+  assert.equal(submitted.status, 200);
+  assert.equal(submitted.body.attempt.score, 100);
+  assert.equal(submitted.body.attempt.passed, true);
+  assert.match(submitted.body.certificateCode, /^SA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+  assert.ok(submitted.body.review.every((item) => item.answeredCorrectly && item.explanation));
+  assertNoCorrectness(submitted.body, "quiz submit");
+  assert.equal((await learner.post(`/api/training/attempts/${attempt.id}/submit`, { answers: answersFor(attempt, true) })).status, 409);
+  assert.equal((await learner.post("/api/training/courses/phishing-social-engineering/attempts")).status, 409);
+});
+
+test("cooldown and the attempt limit return 429", async () => {
+  const learner = await login("dev.demo");
+  const slug = "phishing-social-engineering";
+  await completeAllLessons(learner, slug);
+  const fail = async () => {
+    const started = await learner.post(`/api/training/courses/${slug}/attempts`);
+    assert.equal(started.status, 201);
+    const result = await learner.post(`/api/training/attempts/${started.body.attempt.id}/submit`, { answers: answersFor(started.body.attempt, false) });
+    assert.equal(result.body.attempt.passed, false);
+    assert.equal(result.body.certificateCode, null);
+    assert.ok(result.body.topicsToReview.length >= 1);
+    assertNoCorrectness(result.body, "failed result");
+    return result.body;
+  };
+  const first = await fail();
+  assert.equal(first.attemptsLeft, 2);
+  const blocked = await learner.post(`/api/training/courses/${slug}/attempts`);
+  assert.equal(blocked.status, 429);
+  assert.ok(blocked.body.retryAt);
+  const endCooldown = () => withDb((db) => db.prepare("UPDATE quiz_attempts SET submitted_at = '2020-01-01T00:00:00.000Z' WHERE user_id = ?").run(learner.user.id));
+  endCooldown();
+  await fail();
+  endCooldown();
+  await fail();
+  endCooldown();
+  const exhausted = await learner.post(`/api/training/courses/${slug}/attempts`);
+  assert.equal(exhausted.status, 429);
+  assert.match(exhausted.body.message, /all 3 attempts/);
+});
+
+test("learners cannot read other learners' attempts", async () => {
+  const other = await login("employee.demo");
+  const owner = await login("dev.demo");
+  const history = await owner.get(`/api/training/team/users/${owner.user.id}`);
+  assert.equal(history.status, 403, "employees cannot use the team endpoint even for themselves");
+  const attemptId = withDb((db) => db.prepare("SELECT id FROM quiz_attempts WHERE user_id = ? LIMIT 1").get(owner.user.id).id);
+  assert.equal((await other.get(`/api/training/attempts/${attemptId}/result`)).status, 404);
+  assert.equal((await other.get(`/api/training/attempts/${attemptId}`)).status, 404);
+  assert.equal((await owner.get(`/api/training/attempts/${attemptId}/result`)).status, 200);
+  const consultingManager = await login("manager.consulting");
+  assert.equal((await consultingManager.get(`/api/training/attempts/${attemptId}/result`)).status, 404, "manager of another department");
+});
+
+test("quiz rate limiter blocks bursts per user and recovers after the window", async () => {
+  const { createRateLimiter } = await import("../server/modules/training/rateLimit.js");
+  const allow = createRateLimiter({ limit: 3, windowMs: 1000 });
+  assert.ok(allow("7:quiz-start", 0).allowed);
+  assert.ok(allow("7:quiz-start", 10).allowed);
+  assert.ok(allow("7:quiz-start", 20).allowed);
+  assert.equal(allow("7:quiz-start", 30).allowed, false);
+  assert.ok(allow("8:quiz-start", 30).allowed, "other users are unaffected");
+  assert.ok(allow("7:quiz-start", 1001).allowed);
+});
