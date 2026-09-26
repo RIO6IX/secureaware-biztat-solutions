@@ -289,6 +289,12 @@ test("learners cannot read other learners' attempts", async () => {
   assert.equal((await owner.get(`/api/training/attempts/${attemptId}/result`)).status, 200);
   const consultingManager = await login("manager.consulting");
   assert.equal((await consultingManager.get(`/api/training/attempts/${attemptId}/result`)).status, 404, "manager of another department");
+  withDb((db) => db.prepare("UPDATE users SET department = 'Development' WHERE username = 'manager.consulting'").run());
+  assert.equal((await consultingManager.get(`/api/training/attempts/${attemptId}/result`)).status, 404, "managers never see individual answers, even in their own department");
+  assert.equal((await consultingManager.get(`/api/training/team/users/${owner.user.id}`)).status, 200, "but they do see their own team's status");
+  withDb((db) => db.prepare("UPDATE users SET department = 'Consulting' WHERE username = 'manager.consulting'").run());
+  const admin = await login("security.admin");
+  assert.equal((await admin.get(`/api/training/attempts/${attemptId}/result`)).status, 200);
 });
 
 test("quiz rate limiter blocks bursts per user and recovers after the window", async () => {
@@ -508,4 +514,38 @@ test("evidence export is admin-only and neutralises spreadsheet formulas", async
   }
   const exported = withDb((db) => db.prepare("SELECT actor_user_id FROM audit_events WHERE action = 'TRAINING_EVIDENCE_EXPORTED' ORDER BY id DESC LIMIT 1").get());
   assert.equal(exported.actor_user_id, admin.user.id);
+});
+
+test("learners can download their own training record and old records are purged", async () => {
+  const learner = await login("consultant.demo");
+  const record = await learner.get("/api/training/me/record.csv");
+  assert.equal(record.status, 200);
+  assert.match(record.headers.get("content-disposition"), /my-training-record-/);
+  assert.match(record.text, /"record_type","course","detail","status","score","date"/);
+  assert.match(record.text, /"certificate"/);
+  assert.ok(!record.text.includes("Employee Demo"), "the record contains only the requester's data");
+  assert.equal((await learner.get("/api/training/privacy")).body.retentionYears, 3);
+
+  const { purgeExpiredTrainingRecords, TRAINING_RETENTION_YEARS } = await import("../server/modules/training/retention.js");
+  assert.equal(TRAINING_RETENTION_YEARS, 3);
+  const outcome = withDb((db) => {
+    db.exec("PRAGMA foreign_keys = ON");
+    const courseId = db.prepare("SELECT id FROM training_courses WHERE slug = 'passwords-mfa'").get().id;
+    const old = "2019-01-01T00:00:00.000Z";
+    const attempt = db.prepare(`INSERT INTO quiz_attempts (user_id,course_id,course_version,attempt_number,started_at,expires_at,submitted_at,score,passed,question_ids,option_order,status)
+      VALUES (?,?,1,99,?,?,?,90,1,'[]','{}','submitted')`).run(learner.user.id, courseId, old, old, old).lastInsertRowid;
+    db.prepare("INSERT INTO certificates (user_id,course_id,attempt_id,certificate_code,issued_at) VALUES (?,?,?,?,?)").run(learner.user.id, courseId, attempt, "SA-OLD0-OLD0-OLD0-OLD0", old);
+    const events = [];
+    const result = purgeExpiredTrainingRecords(db, (...args) => events.push(args));
+    return {
+      result,
+      events,
+      left: db.prepare("SELECT COUNT(*) AS n FROM quiz_attempts WHERE id = ?").get(attempt).n,
+      cert: db.prepare("SELECT COUNT(*) AS n FROM certificates WHERE attempt_id = ?").get(attempt).n
+    };
+  });
+  assert.ok(outcome.result.attempts >= 1);
+  assert.equal(outcome.left, 0);
+  assert.equal(outcome.cert, 0, "certificates go with their attempt");
+  assert.equal(outcome.events[0][1], "TRAINING_RETENTION_PURGE");
 });

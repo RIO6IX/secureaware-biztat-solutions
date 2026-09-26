@@ -85,7 +85,8 @@ export default function registerTeam({ route, store, foundation }) {
     return ctx.send(200, {
       user: { id: member.id, displayName: member.display_name, role: member.role, department: member.department },
       courses: memberCourses(store, member),
-      attempts: attemptRows(foundation.db, member.id)
+      // Managers get status and scores only; certificate codes stay with the holder and admins.
+      attempts: attemptRows(foundation.db, member.id).map((row) => (foundation.hasRole(ctx.user, ADMIN_ROLES) ? row : { ...row, certificateCode: null }))
     });
   }, { roles: MANAGER_ROLES });
 

@@ -4,6 +4,7 @@ import { currentQuery } from "../core/router.js";
 import { loading, errorState, emptyState, pageHeader, progressRing } from "../core/ui.js";
 import { cover } from "./covers.js";
 import { STATUS, statusBadge, dueLabel, courseHref, minutes } from "./common.js";
+import { privacyNotice } from "./privacy.js";
 
 const TABS = [["assigned", "My assigned training"], ["all", "All courses"], ["completed", "Completed"]];
 
@@ -93,6 +94,7 @@ export async function cataloguePage(container) {
   mount(container,
     pageHeader("Security training", "Short, practical courses that help you protect Biztat, our clients and yourself.",
       h("a", { class: "button", href: "#/my-learning" }, "My learning")),
+    privacyNotice(),
     tabList,
     h("div", { class: "filters", role: "search" },
       h("label", { class: "field grow" }, h("span", { class: "field-label" }, "Search"), search),

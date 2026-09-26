@@ -1,7 +1,8 @@
-import { api } from "../core/api.js";
+import { api, download } from "../core/api.js";
 import { h, formatDate, formatDateTime } from "../core/dom.js";
-import { withStates, pageHeader, table, emptyState } from "../core/ui.js";
+import { withStates, pageHeader, table, emptyState, toast } from "../core/ui.js";
 import { statusBadge, courseHref, nextStep } from "./common.js";
+import { privacyNotice } from "./privacy.js";
 
 function metric(label, value) {
   return h("div", { class: "metric-card" }, h("strong", {}, String(value)), h("span", {}, label));
@@ -12,9 +13,11 @@ function attemptResult(row) {
   return row.status === "expired" ? "Expired" : "In progress";
 }
 
-export function myLearningPage(container, params, extraActions = () => null) {
+export function myLearningPage(container) {
   return withStates(container, () => api("/api/training/me"), (data) => h("div", { class: "stack" },
-    pageHeader("My learning", "Your assigned courses, attempt history and certificates.", extraActions()),
+    pageHeader("My learning", "Your assigned courses, attempt history and certificates.",
+      h("button", { type: "button", on: { click: () => download("/api/training/me/record.csv", "my-training-record.csv").then(() => toast("Your training record has been downloaded.")).catch((error) => toast(error.message, "error")) } }, "Download my training record (CSV)")),
+    privacyNotice(),
     h("div", { class: "metric-grid" },
       metric("Assigned", data.summary.assigned),
       metric("In progress", data.summary.inProgress),

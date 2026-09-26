@@ -39,7 +39,8 @@ export function teamPage(container) {
             { label: "Result", render: (row) => (row.status === "submitted" ? statusBadge(row.passed ? "passed" : "failed_retake") : row.status) },
             { label: "Score", render: (row) => (row.score === null ? "—" : `${row.score}%`) },
             { label: "Date", render: (row) => formatDate(row.submittedAt || row.startedAt) },
-            { label: "Review", render: (row) => (row.status === "submitted" ? h("a", { href: `#/training/attempts/${row.id}` }, "Open") : "—") }
+            // Answer-level reviews are private to the learner and admins.
+            ...(data.canChooseDepartment ? [{ label: "Review", render: (row) => (row.status === "submitted" ? h("a", { href: `#/training/attempts/${row.id}` }, "Open") : "—") }] : [])
           ], history.attempts, { caption: "Attempt history", empty: "No attempts yet" })));
         detail.scrollIntoView({ block: "start" });
       } catch (error) {

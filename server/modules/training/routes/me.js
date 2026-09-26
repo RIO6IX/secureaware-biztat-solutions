@@ -1,5 +1,6 @@
 import { courseSummary } from "../store.js";
-import { canViewUser } from "../access.js";
+import { isAdmin } from "../access.js";
+import { TRAINING_RETENTION_YEARS } from "../retention.js";
 import { CERTIFICATE_CODE_PATTERN } from "../quiz.js";
 import { createRateLimiter } from "../rateLimit.js";
 import { attemptRows } from "./team.js";
@@ -33,12 +34,12 @@ export default function registerMe({ route, store, foundation }) {
     });
   });
 
-  // Full certificate for printing: the holder, their department manager or an admin.
+  // Full certificate for printing: the holder or an admin.
   route("GET", "/me/certificates/:code", (ctx) => {
     const code = String(ctx.params.code).toUpperCase();
     const row = CERTIFICATE_CODE_PATTERN.test(code) ? certificateByCode.get(code) : null;
     const holder = row ? store.q.userById.get(row.user_id) : null;
-    if (!row || !canViewUser(ctx.user, holder)) return ctx.send(404, { message: "Certificate not found" });
+    if (!row || !holder || (holder.id !== ctx.user.id && !isAdmin(ctx.user))) return ctx.send(404, { message: "Certificate not found" });
     return ctx.send(200, {
       certificate: {
         code: row.certificate_code,
@@ -50,6 +51,27 @@ export default function registerMe({ route, store, foundation }) {
       }
     });
   });
+
+  // Data subject access: the learner downloads everything the training module holds about them.
+  route("GET", "/me/record.csv", (ctx) => {
+    const rows = [];
+    for (const { course, state } of store.learnerCourses(ctx.user)) {
+      if (!state.assigned && state.status === "not_started") continue;
+      rows.push({ record_type: "course", course: course.title, detail: `${state.lessonsCompleted}/${state.lessonsTotal} lessons${state.mandatory ? ", mandatory" : ""}`, status: state.status, score: state.bestScore ?? "", date: state.dueDate || "" });
+    }
+    for (const row of db.prepare(`SELECT l.position, l.title AS lesson, c.title AS course, p.completed_at FROM lesson_progress p
+      JOIN training_lessons l ON l.id = p.lesson_id JOIN training_courses c ON c.id = l.course_id WHERE p.user_id = ? ORDER BY p.completed_at`).all(ctx.user.id)) {
+      rows.push({ record_type: "lesson", course: row.course, detail: `Lesson ${row.position}: ${row.lesson}`, status: "completed", score: "", date: row.completed_at });
+    }
+    for (const attempt of attemptRows(db, ctx.user.id)) {
+      rows.push({ record_type: "attempt", course: attempt.course.title, detail: `Attempt ${attempt.attemptNumber} (course version ${attempt.courseVersion})`, status: attempt.status === "submitted" ? (attempt.passed ? "passed" : "failed") : attempt.status, score: attempt.score ?? "", date: attempt.submittedAt || attempt.startedAt });
+      if (attempt.certificateCode) rows.push({ record_type: "certificate", course: attempt.course.title, detail: attempt.certificateCode, status: "issued", score: attempt.score, date: attempt.submittedAt });
+    }
+    ctx.audit("TRAINING_RECORD_EXPORTED", `${rows.length} rows`);
+    return foundation.sendCsv(ctx.response, rows, ["record_type", "course", "detail", "status", "score", "date"], `my-training-record-${new Date().toISOString().slice(0, 10)}.csv`);
+  });
+
+  route("GET", "/privacy", (ctx) => ctx.send(200, { retentionYears: TRAINING_RETENTION_YEARS }));
 
   // Verification answers only "is this code genuine, for which course and when".
   // It never returns the holder's name, score or any other personal data.

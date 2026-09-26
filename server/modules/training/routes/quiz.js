@@ -1,6 +1,6 @@
 import { createQuiz } from "../quiz.js";
 import { createRateLimiter } from "../rateLimit.js";
-import { canViewUser } from "../access.js";
+import { isAdmin } from "../access.js";
 import { id as idValue, slug as slugValue } from "../validate.js";
 
 export const QUIZ_RATE_LIMIT = { limit: 10, windowMs: 60_000 };
@@ -84,11 +84,12 @@ export default function registerQuiz({ route, store, foundation }) {
     });
   });
 
-  // Results: the learner, their department manager, or an admin.
+  // The answer-by-answer review is personal: only the learner and admins can open it.
+  // Managers see status, scores and attempt counts in the team view, not individual answers.
   route("GET", "/attempts/:id/result", (ctx) => {
     const attempt = quiz.q.attemptById.get(idValue(ctx.params.id, "attempt id"));
     const owner = attempt ? store.q.userById.get(attempt.user_id) : null;
-    if (!attempt || !canViewUser(ctx.user, owner)) return ctx.send(404, { message: "Attempt not found" });
+    if (!attempt || !owner || (attempt.user_id !== ctx.user.id && !isAdmin(ctx.user))) return ctx.send(404, { message: "Attempt not found" });
     if (attempt.status === "in_progress") return ctx.send(409, { message: "This attempt has not been submitted yet" });
     const course = store.q.courseById.get(attempt.course_id);
     const state = store.courseState(owner, course);

@@ -10,6 +10,7 @@ import registerAdminCourses from "./routes/admin-courses.js";
 import registerAdminAssign from "./routes/admin-assign.js";
 import registerReports from "./routes/reports.js";
 import { createMatrix } from "./matrix.js";
+import { purgeExpiredTrainingRecords } from "./retention.js";
 
 export const prefix = "/api/training/";
 
@@ -45,6 +46,7 @@ export function init(shared) {
   registerReports(deps);
   matrix.reconcileAll();
   seedDemoActivity(foundation.db);
+  purgeExpiredTrainingRecords(foundation.db, foundation.audit);
 }
 
 // Foundation hook: runs after every successful login, which picks up new users and
