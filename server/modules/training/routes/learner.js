@@ -1,7 +1,6 @@
-import { courseDetail, courseSummary, lessonView } from "../store.js";
+import { courseDetail, courseSummary, lessonView, STATUS_VALUES as STATUS_FILTERS } from "../store.js";
 import { fail, oneOf, queryText, slug as slugValue } from "../validate.js";
 
-const STATUS_FILTERS = ["not_started", "in_progress", "passed", "failed_retake", "failed_locked", "overdue"];
 
 export default function registerLearner({ route, store }) {
   // Resolves a course the signed-in learner may open. Unknown and inaccessible courses

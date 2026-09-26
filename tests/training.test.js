@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "secureaware-training-"));
 process.env.SECUREAWARE_DB = path.join(tempDir, "training.sqlite");
+process.env.SECUREAWARE_DEMO_DATA = "off";
 const { default: server } = await import("../server/index.js");
 const { courses } = await import("../server/modules/training/content/index.js");
 const { migrate } = await import("../server/modules/training/schema.js");
@@ -463,4 +464,48 @@ test("the Training Needs Matrix auto-assigns new users and follows department ch
   const moved = await login("new.starter");
   const after = await moved.get("/api/training/courses?tab=assigned");
   assert.ok(!after.body.courses.some((course) => course.slug === created.body.course.slug));
+});
+
+test("managers can remind only their own team and reminders are audited", async () => {
+  const employee = await login("employee.demo");
+  const consultant = await login("consultant.demo");
+  const financeManager = await login("manager.demo");
+  const phishing = withDb((db) => db.prepare("SELECT id FROM training_courses WHERE slug = 'phishing-social-engineering'").get().id);
+  assert.equal((await employee.post("/api/training/team/reminders", { targetUserId: consultant.user.id, courseId: phishing })).status, 403);
+  assert.equal((await financeManager.post("/api/training/team/reminders", { targetUserId: consultant.user.id, courseId: phishing })).status, 404);
+  assert.equal((await financeManager.post("/api/training/team/reminders", { targetUserId: employee.user.id, courseId: phishing })).status, 201);
+  assert.equal((await financeManager.post("/api/training/team/reminders", { targetUserId: employee.user.id, courseId: phishing })).status, 429);
+  const notes = await employee.get("/api/notifications");
+  assert.ok(notes.body.notifications.some((note) => note.type === "reminder" && note.body.includes("Manager Demo")));
+  const audit = withDb((db) => db.prepare("SELECT actor_user_id FROM audit_events WHERE action = 'TRAINING_REMINDER_SENT' ORDER BY id DESC LIMIT 1").get());
+  assert.equal(audit.actor_user_id, financeManager.user.id, "audit records the real actor");
+});
+
+test("evidence export is admin-only and neutralises spreadsheet formulas", async () => {
+  const { scryptSync, randomBytes } = await import("node:crypto");
+  const salt = randomBytes(16).toString("hex");
+  withDb((db) => db.prepare("INSERT INTO users (username,display_name,role,department,password_salt,password_hash,created_at) VALUES (?,?,?,?,?,?,?)")
+    .run("formula.user", "=HYPERLINK(\"http://evil.example\",\"click\")", "Employee", "Finance", salt, scryptSync("formula user passphrase", salt, 64).toString("hex"), new Date().toISOString()));
+  const admin = await login("security.admin");
+  await admin.post("/api/training/admin/matrix/apply");
+  const employee = await login("employee.demo");
+  assert.equal((await employee.get("/api/training/admin/reports")).status, 403);
+  assert.equal((await employee.get("/api/training/admin/reports.csv")).status, 403);
+
+  const report = await admin.get("/api/training/admin/reports?department=Finance");
+  assert.equal(report.status, 200);
+  assert.ok(report.body.rows.every((row) => row.department === "Finance"));
+  assert.ok(report.body.byCourse.length >= 1);
+  assert.equal((await admin.get("/api/training/admin/reports?status=bogus")).status, 400);
+
+  const csv = await admin.get("/api/training/admin/reports.csv?department=Finance");
+  assert.equal(csv.status, 200);
+  assert.match(csv.headers.get("content-type"), /text\/csv/);
+  assert.match(csv.headers.get("content-disposition"), /attachment; filename="training-evidence-/);
+  assert.ok(csv.text.includes(`"'=HYPERLINK(`), "formula cell is prefixed with a quote");
+  for (const line of csv.text.split("\r\n")) {
+    for (const cell of line.split('","')) assert.ok(!/^"?[=+\-@]/.test(cell), `unsafe cell: ${cell}`);
+  }
+  const exported = withDb((db) => db.prepare("SELECT actor_user_id FROM audit_events WHERE action = 'TRAINING_EVIDENCE_EXPORTED' ORDER BY id DESC LIMIT 1").get());
+  assert.equal(exported.actor_user_id, admin.user.id);
 });

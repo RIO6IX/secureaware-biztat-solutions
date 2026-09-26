@@ -123,6 +123,10 @@ CREATE TABLE IF NOT EXISTS certificates (
   certificate_code TEXT NOT NULL UNIQUE,
   issued_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS training_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_training_lessons_course ON training_lessons(course_id, position);
 CREATE INDEX IF NOT EXISTS idx_training_questions_course ON training_questions(course_id, active);
 CREATE INDEX IF NOT EXISTS idx_training_options_question ON training_options(question_id);

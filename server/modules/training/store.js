@@ -2,6 +2,7 @@
 // training_options.is_correct; correctness is only read inside quiz.js for marking.
 
 export const ATTEMPT_TIME_LIMIT_MINUTES = 60;
+export const STATUS_VALUES = ["not_started", "in_progress", "passed", "failed_retake", "failed_locked", "overdue"];
 
 const parse = (value, fallback) => {
   try {

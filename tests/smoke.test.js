@@ -6,6 +6,7 @@ import path from "node:path";
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "secureaware-main-"));
 process.env.SECUREAWARE_DB = path.join(tempDir, "test.sqlite");
+process.env.SECUREAWARE_DEMO_DATA = "off";
 const { default: server } = await import("../server/index.js");
 
 async function withServer(run) {

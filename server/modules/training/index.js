@@ -1,5 +1,5 @@
 import { migrate } from "./schema.js";
-import { seedCourses } from "./seed.js";
+import { seedCourses, seedDemoActivity } from "./seed.js";
 import { createStore } from "./store.js";
 import { asObject } from "./validate.js";
 import registerLearner from "./routes/learner.js";
@@ -8,6 +8,7 @@ import registerQuiz from "./routes/quiz.js";
 import registerMe from "./routes/me.js";
 import registerAdminCourses from "./routes/admin-courses.js";
 import registerAdminAssign from "./routes/admin-assign.js";
+import registerReports from "./routes/reports.js";
 import { createMatrix } from "./matrix.js";
 
 export const prefix = "/api/training/";
@@ -41,7 +42,9 @@ export function init(shared) {
   registerMe(deps);
   registerAdminCourses(deps);
   registerAdminAssign(deps);
+  registerReports(deps);
   matrix.reconcileAll();
+  seedDemoActivity(foundation.db);
 }
 
 // Foundation hook: runs after every successful login, which picks up new users and
