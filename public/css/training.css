@@ -182,6 +182,7 @@
 }
 
 @media (max-width: 520px) {
+  .lesson-topbar { position: static; }
   .result-hero { grid-template-columns: 1fr; justify-items: center; text-align: center; }
   .certificate { padding: 32px 16px; border-width: 8px; }
   .certificate-title { font-size: 1.5rem; }
