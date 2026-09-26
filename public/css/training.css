@@ -165,6 +165,7 @@
 .question-list li.inactive { opacity: 0.6; }
 .option-row { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-2); align-items: center; }
 .matrix-wrap { overflow-x: auto; }
+.matrix input[type="number"] { width: 90px; }
 .matrix th, .matrix td { text-align: center; white-space: nowrap; }
 .matrix th:first-child, .matrix td:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); }
 .metric-grid { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: var(--space-5); }

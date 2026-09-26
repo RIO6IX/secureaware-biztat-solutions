@@ -7,6 +7,8 @@ import registerTeam from "./routes/team.js";
 import registerQuiz from "./routes/quiz.js";
 import registerMe from "./routes/me.js";
 import registerAdminCourses from "./routes/admin-courses.js";
+import registerAdminAssign from "./routes/admin-assign.js";
+import { createMatrix } from "./matrix.js";
 
 export const prefix = "/api/training/";
 
@@ -14,6 +16,7 @@ const JSON_LIMIT_BYTES = 64 * 1024;
 const routes = [];
 let foundation;
 let store;
+let matrix;
 
 function route(method, pattern, handler, options = {}) {
   const keys = [];
@@ -29,13 +32,22 @@ export function init(shared) {
   migrate(foundation.db);
   seedCourses(foundation.db);
   store = createStore(foundation.db);
-  // hooks lets one route group react to another (e.g. publishing triggers matrix assignment).
-  const deps = { route, store, foundation, hooks: {} };
+  matrix = createMatrix(foundation.db, foundation.notify);
+  // hooks lets one route group react to another (publishing a course applies the matrix).
+  const deps = { route, store, foundation, matrix, hooks: { afterPublish: () => matrix.reconcileAll() } };
   registerLearner(deps);
   registerTeam(deps);
   registerQuiz(deps);
   registerMe(deps);
   registerAdminCourses(deps);
+  registerAdminAssign(deps);
+  matrix.reconcileAll();
+}
+
+// Foundation hook: runs after every successful login, which picks up new users and
+// role or department changes for the Training Needs Matrix.
+export function onLogin(user) {
+  matrix.reconcileUser(user);
 }
 
 export async function handle(request, response, url, context) {

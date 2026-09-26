@@ -408,3 +408,59 @@ test("course builder validates questions and versions published courses", async 
   assert.equal((await admin.post(`/api/training/admin/courses/${courseId}/archive`)).status, 200);
   assert.equal((await learner.get(`/api/training/courses/${slug}`)).status, 404, "archived courses disappear for learners");
 });
+
+test("assignments need a published course, preview recipients and are admin-only", async () => {
+  for (const username of ["employee.demo", "manager.demo"]) {
+    const session = await login(username);
+    assert.equal((await session.post("/api/training/admin/assignments", { courseId: 1, targetType: "department", targetValue: "Finance" })).status, 403);
+    assert.equal((await session.get("/api/training/admin/matrix")).status, 403);
+  }
+  const admin = await login("security.admin");
+  const draft = await admin.post("/api/training/admin/courses", { ...newCourse, title: "Draft only course" });
+  const future = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+  assert.equal((await admin.post("/api/training/admin/assignments", { courseId: draft.body.course.id, targetType: "department", targetValue: "Finance", dueDate: future, mandatory: true })).status, 400);
+  assert.equal((await admin.post("/api/training/admin/assignments", { courseId: 1, targetType: "department", targetValue: "Nowhere", dueDate: future, mandatory: true })).status, 400);
+  assert.equal((await admin.post("/api/training/admin/assignments", { courseId: 1, targetType: "department", targetValue: "Finance", dueDate: "2001-01-01", mandatory: true })).status, 400);
+  const preview = await admin.post("/api/training/admin/assignments/preview", { courseId: 1, targetType: "department", targetValue: "Consulting" });
+  assert.equal(preview.status, 200);
+  assert.ok(preview.body.recipients.every((person) => person.department === "Consulting"));
+  const assigned = await admin.post("/api/training/admin/assignments", { courseId: 1, targetType: "department", targetValue: "Consulting", dueDate: future, mandatory: true });
+  assert.equal(assigned.status, 201);
+  assert.equal(assigned.body.recipients, preview.body.recipients.length);
+  const consultant = await login("consultant.demo");
+  const notes = await consultant.get("/api/notifications");
+  assert.ok(notes.body.notifications.some((note) => note.title.includes("Phishing")));
+});
+
+test("the Training Needs Matrix auto-assigns new users and follows department changes", async () => {
+  const admin = await login("security.admin");
+  // A Development-only requirement for a new published course.
+  const created = await admin.post("/api/training/admin/courses", { ...newCourse, title: "Development only course" });
+  const courseId = created.body.course.id;
+  await admin.post(`/api/training/admin/courses/${courseId}/lessons`, { title: "Lesson", bodyMarkdown: "Lesson body with enough text.", estimatedMinutes: 2, sources: [] });
+  for (const prompt of ["Dev question one?", "Dev question two?"]) await admin.post(`/api/training/admin/courses/${courseId}/questions`, newQuestion(prompt));
+  assert.equal((await admin.post(`/api/training/admin/courses/${courseId}/publish`)).status, 200);
+  const matrix = await admin.get("/api/training/admin/matrix");
+  const requirements = [...matrix.body.requirements, { role: "*", department: "Development", courseId, dueInDays: 21 }];
+  assert.equal((await admin.put("/api/training/admin/matrix", { requirements: [...requirements, { role: "Wizard", department: null, courseId, dueInDays: 5 }] })).status, 400);
+  assert.equal((await admin.put("/api/training/admin/matrix", { requirements })).status, 200);
+
+  // A brand-new user created directly in the users table (as an HR system would) is assigned on first login.
+  const { scryptSync, randomBytes } = await import("node:crypto");
+  const salt = randomBytes(16).toString("hex");
+  withDb((db) => db.prepare("INSERT INTO users (username,display_name,role,department,password_salt,password_hash,created_at) VALUES (?,?,?,?,?,?,?)")
+    .run("new.starter", "New Starter", "Employee", "Development", salt, scryptSync("new starter passphrase", salt, 64).toString("hex"), new Date().toISOString()));
+  PASSWORDS["new.starter"] = "new starter passphrase";
+  const starter = await login("new.starter");
+  const mine = await starter.get("/api/training/courses?tab=assigned");
+  const slugs = mine.body.courses.map((course) => course.slug);
+  assert.ok(slugs.includes("phishing-social-engineering"), "all-staff requirement applied");
+  assert.ok(slugs.includes(created.body.course.slug), "department requirement applied");
+  assert.ok(mine.body.courses.every((course) => course.state.mandatory && course.state.dueDate));
+
+  // Moving department removes the requirement that no longer applies.
+  withDb((db) => db.prepare("UPDATE users SET department = 'Finance' WHERE username = 'new.starter'").run());
+  const moved = await login("new.starter");
+  const after = await moved.get("/api/training/courses?tab=assigned");
+  assert.ok(!after.body.courses.some((course) => course.slug === created.body.course.slug));
+});

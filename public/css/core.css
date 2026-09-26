@@ -191,7 +191,8 @@ textarea { min-height: 120px; resize: vertical; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: var(--space-3); border-bottom: 1px solid var(--border); vertical-align: top; }
 th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); background: var(--surface-muted); }
-tbody tr:last-child td { border-bottom: 0; }
+tbody tr:last-child td, tbody tr:last-child th { border-bottom: 0; }
+tbody th { text-transform: none; letter-spacing: normal; font-size: inherit; color: var(--text); background: var(--surface); font-weight: 400; }
 
 /* Tabs and filters */
 .tabs { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--border); margin-bottom: var(--space-4); overflow-x: auto; }
