@@ -1,0 +1,19 @@
+/* Compliance dashboard (Member 4). */
+.dash-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-4); }
+.chart { width: 100%; height: auto; }
+.chart-grid { stroke: var(--border); stroke-width: 1; }
+.chart-axis { fill: var(--text-muted); font-size: 11px; }
+.chart-line { stroke: var(--primary); stroke-width: 3; }
+.chart-dot { fill: var(--surface); stroke: var(--primary); stroke-width: 2; }
+.donut-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); }
+.donut-track { stroke: var(--border); }
+.donut-high { stroke: var(--danger); }
+.donut-medium { stroke: #d97706; }
+.donut-low { stroke: var(--success); }
+.donut-total { font-size: 24px; font-weight: 700; fill: var(--text); }
+.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: var(--space-2); vertical-align: middle; }
+.donut-high-swatch { background: var(--danger); }
+.donut-medium-swatch { background: #d97706; }
+.donut-low-swatch { background: var(--success); }
+@media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
