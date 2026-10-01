@@ -129,6 +129,7 @@ Reconciliation (`matrix.js`) runs at start-up, on every login, when the matrix i
 | Authentication | The foundation session (HttpOnly, SameSite=Strict cookie, stored in the database, 30-minute idle expiry) wraps every `/api/training/*` route. |
 | CSRF | The foundation compares `X-CSRF-Token` with the session token for every non-GET request. Tested for all 18 training state-changing routes. |
 | Identity | `context.user` comes from the session only. No handler reads a user id for the acting user. |
+| One user per tab | The session cookie is shared by all tabs, so every API response carries `x-secureaware-user`. A tab whose remembered user differs (someone signed in as another person in another tab) signs itself out instead of showing or changing that person's progress. Sign-ins and sign-outs are also broadcast to other tabs through `localStorage`. |
 | RBAC | Route-level `roles` checked with the foundation's `hasRole`. Denials are audited as `TRAINING_ACCESS_DENIED`. |
 | Object-level | `canViewUser`: admins see everyone, managers their own department, learners themselves. Out-of-scope objects return 404. Answer reviews and full certificates are limited to the learner and admins. |
 | Answer secrecy | The option projection selects only `id, text`. Marking reads `is_correct` inside `quiz.js`. Wrong-answer explanations stay hidden until the course is passed. |

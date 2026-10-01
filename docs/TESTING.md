@@ -2,7 +2,7 @@
 
 Run `npm run build` and `npm test` (Node's built-in `node --test`). Each test file uses its own temporary SQLite database. Demo activity is switched off in tests with `SECUREAWARE_DEMO_DATA=off`.
 
-Latest run on branch `chanuka`, 2026-09-26: **32 tests, 32 passed, 0 failed.**
+Latest run on branch `chanuka`, 2026-09-26: **33 tests, 33 passed, 0 failed.**
 
 ## Foundation (`tests/smoke.test.js`)
 
@@ -48,6 +48,7 @@ Latest run on branch `chanuka`, 2026-09-26: **32 tests, 32 passed, 0 failed.**
 | 23 | `userId` in body or query is ignored | no effect | Passing |
 | 24 | Invalid ids, enums, malformed JSON, oversized bodies, wrong method | 400 / 413 / 405 | Passing |
 | 25 | Audit completeness; real actor; no answers, passwords or session ids | as described | Passing |
+| 26 | Each response names the session user (`x-secureaware-user`); one learner's lesson completion never changes another's progress | as described | Passing |
 
 ## Manual browser checks (headless Chrome, 2026-09-26)
 
@@ -58,6 +59,7 @@ Latest run on branch `chanuka`, 2026-09-26: **32 tests, 32 passed, 0 failed.**
 | Markdown preview with `<img onerror>` and a `javascript:` link | Rendered as text; no element or link created |
 | 360px width: catalogue, lesson, evidence page | No horizontal scroll |
 | Manager team view and reminder; admin matrix, assignments with preview, evidence | Pass |
+| Two accounts in two tabs of one browser: the older tab signs out with an explanation instead of showing the other user's progress; a normal refresh stays signed in | Pass (2026-10-01) |
 | Keyboard | Skip link, visible focus ring, tab arrow keys, labelled controls, `aria-live` quiz hints and toasts |
 
 Still to do once all branches are merged: an Edge and Chrome desktop pass and a screen-reader spot check.

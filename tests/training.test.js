@@ -658,3 +658,21 @@ test("audit events use the real actor and never contain answers, passwords or se
     assert.ok(!sessions.some((session) => row.target.includes(session.id) || row.target.includes(session.csrf_token)), "session secret in audit");
   }
 });
+
+test("every API response names the session's user so a tab showing someone else can sign itself out", async () => {
+  const employee = await login("employee.demo");
+  const consultant = await login("consultant.demo");
+  const mine = await employee.get("/api/training/courses?tab=all");
+  const theirs = await consultant.get("/api/training/courses?tab=all");
+  assert.equal(mine.headers.get("x-secureaware-user"), String(employee.user.id));
+  assert.equal(theirs.headers.get("x-secureaware-user"), String(consultant.user.id));
+  assert.notEqual(mine.headers.get("x-secureaware-user"), theirs.headers.get("x-secureaware-user"));
+  // Progress is per person: one learner completing a lesson never changes another's.
+  const slug = "incident-reporting";
+  const before = theirs.body.courses.find((course) => course.slug === slug).state.lessonsCompleted;
+  assert.equal((await employee.post(`/api/training/courses/${slug}/lessons/1/complete`)).status, 200);
+  const after = (await consultant.get("/api/training/courses?tab=all")).body.courses.find((course) => course.slug === slug).state.lessonsCompleted;
+  assert.equal(after, before);
+  const unauthenticated = await fetch(`${base}/api/training/courses`);
+  assert.equal(unauthenticated.headers.get("x-secureaware-user"), null);
+});
