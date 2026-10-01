@@ -2,7 +2,7 @@
 
 Run `npm run build` and `npm test` (Node's built-in `node --test`). Each test file uses its own temporary SQLite database. Demo activity is switched off in tests with `SECUREAWARE_DEMO_DATA=off`.
 
-Latest run on branch `sanduni` (foundation + training + policy), 2026-10-01: **56 tests, 56 passed, 0 failed** (7 foundation, 25 training, 24 policy).
+Latest run on `main` (all modules merged), 2026-10-01: **64 tests, 64 passed, 0 failed** (7 foundation, 25 training, 24 policy, 8 compliance dashboard).
 
 ## Foundation (`tests/smoke.test.js`)
 
@@ -85,6 +85,19 @@ Latest run on branch `sanduni` (foundation + training + policy), 2026-10-01: **5
 | Employee inbox tabs and counts, reader with contents and What changed callout, read-to-end unlock, wrong name rejected, receipt shown | Pass |
 | Admin library, editor preview, create v1.2 from history, submit to IT and Management reviewers, editor locked during review | Pass |
 | History, side-by-side and inline compare, assignments, compliance, calendar, questions, exceptions, research, team view | Pass, no console errors or CSP violations |
+
+## Compliance dashboard (`tests/compliance.test.js`)
+
+| # | Case | Expected | Status |
+| --- | --- | --- | --- |
+| 1 | Unauthenticated; employee opens dashboard or reports | 401 / 403 | Passing |
+| 2 | Metrics are 0–100, overall is the average of the three rates, 7-point trend, risks add up to employees | as described | Passing |
+| 3 | Department filter; manager pinned to own department; activity hidden from managers | as described | Passing |
+| 4 | Four report types; CSV download is formula-safe; views and exports audited | as described | Passing |
+| 5 | Reminder notifies, is throttled, refuses other departments and bad input | 201 / 429 / 404 / 400 | Passing |
+| 6 | Mark all notifications as read | unread 0 | Passing |
+| 7 | Risk thresholds match the original dashboard | as described | Passing |
+| 8 | Security headers on static responses | CSP, nosniff, DENY | Passing |
 
 ## Manual browser checks: training module (headless Chrome, 2026-09-26)
 

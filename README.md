@@ -4,7 +4,7 @@ SecureAware is an information security policy awareness and compliance managemen
 
 ## Branches
 
-- `main`: shared secure foundation.
+- `main`: shared secure foundation plus all merged modules (the version to demo and deploy).
 - `sanduni`: Member 2 - Policy Management, Assignment and Acknowledgement.
 - `chanuka`: Member 3 - Security Training, Quiz and Assessment.
 - `shaeed028`: Member 4 - Compliance dashboard and reporting.
@@ -47,6 +47,16 @@ All accounts and people are fictional.
 | Department Manager | `manager.consulting` | `ConsultManagerPass!2026` | Consulting |
 | Security/HR Admin | `security.admin` | `AdminPass!2026` | Information Security |
 | System Admin | `system.admin` | `SystemPass!2026` | IT |
+
+## Compliance dashboard (branch `shaeed028`)
+
+For Department Managers (own department only) and administrators:
+
+- Live dashboard: overall compliance (average of policy acknowledgement, training completion and quiz pass rates), a 7-point trend over 30, 60 or 90 days, an employee risk donut, a department breakdown, overdue policy and training items with *Send reminder*, and recent activity for admins.
+- Reports: executive summary, policy acknowledgement, training and quiz, and employee risk review, each with a formula-safe CSV export.
+- Mark all notifications as read.
+
+Originally built on its own server with fixed figures; on `main` it is a module (`server/modules/compliance`, `public/js/compliance`) that reads the policy and training data and runs behind the same session, CSRF and role checks.
 
 ## Policy module (branch `sanduni`)
 
@@ -116,7 +126,7 @@ Browser (ES modules, hash router, DOM builder - no innerHTML)
 Node HTTP server (server/index.js)
    |  Auth, sessions, CSRF, RBAC, audit, notifications, CSV, password policy
    |  Module discovery: server/modules/<name>/index.js
-Feature modules (server/modules/policy/, server/modules/training/ ...)
+Feature modules (server/modules/compliance/, policy/, training/)
    |
 SQLite (node:sqlite, parameterised statements only)
 ```
