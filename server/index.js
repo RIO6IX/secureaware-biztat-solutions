@@ -136,6 +136,10 @@ async function handleRequest(request, response) {
 async function api(request, response, url) {
   const context = requireSession(request, response);
   if (!context) return sendJson(response, 401, { message: "Authentication required" });
+  // The session cookie is shared by every tab in the browser. Telling the page whose session
+  // answered lets a tab that still shows another user notice the switch instead of showing
+  // (or changing) that other person's progress.
+  response.setHeader("x-secureaware-user", String(context.user.id));
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && request.headers["x-csrf-token"] !== context.session.csrf_token) {
     audit(context.user.id, "CSRF_REJECTED", url.pathname, request);
     return sendJson(response, 403, { message: "Request verification failed" });
