@@ -3,7 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "public");
@@ -48,9 +48,21 @@ CREATE TABLE IF NOT EXISTS audit_events (
   ip_address TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  link TEXT,
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at);
 `);
 
 seedFoundation();
+seedDemoUsers();
 
 const statements = {
   userByUsername: db.prepare("SELECT * FROM users WHERE username = ? AND active = 1"),
@@ -62,12 +74,42 @@ const statements = {
   audit: db.prepare("INSERT INTO audit_events (actor_user_id,action,target,ip_address,created_at) VALUES (?,?,?,?,?)")
 };
 
+// Feature modules live in server/modules/<name>/index.js and are discovered at startup,
+// so each member branch adds its own folder without editing this file.
+const foundation = { db, audit, hasRole, readJson, sendJson, sendCsv, toCsv, publicError, publicUser, notify, validatePasswordPolicy };
+const modules = await loadModules();
+
 const server = http.createServer((request, response) => {
   handleRequest(request, response).catch((error) => {
-    console.error(error);
+    if (!error.publicMessage) console.error(error);
+    if (response.headersSent) return response.end();
     sendJson(response, error.status || 500, { message: error.publicMessage || "Server error" });
   });
 });
+
+async function loadModules() {
+  const modulesDir = path.join(root, "server", "modules");
+  if (!fs.existsSync(modulesDir)) return [];
+  const loaded = [];
+  for (const name of fs.readdirSync(modulesDir).sort()) {
+    const entry = path.join(modulesDir, name, "index.js");
+    if (!fs.existsSync(entry)) continue;
+    const mod = await import(pathToFileURL(entry).href);
+    await mod.init?.(foundation);
+    loaded.push(mod);
+  }
+  return loaded;
+}
+
+function runModuleHook(hook, ...args) {
+  for (const mod of modules) {
+    try {
+      mod[hook]?.(...args);
+    } catch (error) {
+      console.error(`Module hook ${hook} failed`, error);
+    }
+  }
+}
 
 async function handleRequest(request, response) {
   applySecurityHeaders(response);
@@ -95,9 +137,69 @@ async function api(request, response, url) {
   }
   if (request.method === "GET" && url.pathname === "/api/foundation/audit.csv") {
     if (!hasRole(context.user, ["Security/HR Admin", "System Admin"])) return sendJson(response, 403, { message: "Access denied" });
-    return sendCsv(response, auditRows());
+    return sendCsv(response, auditRows(), ["id", "created_at", "username", "action", "target", "ip_address"], "audit.csv");
+  }
+  if (request.method === "POST" && url.pathname === "/api/auth/password") return changePassword(request, response, context);
+  if (request.method === "GET" && url.pathname === "/api/notifications") {
+    const rows = db.prepare("SELECT id,type,title,body,link,created_at,read_at FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 100").all(context.user.id);
+    return sendJson(response, 200, { notifications: rows, unreadCount: rows.filter((row) => !row.read_at).length });
+  }
+  const readMatch = url.pathname.match(/^\/api\/notifications\/(\d{1,10})\/read$/);
+  if (request.method === "POST" && readMatch) {
+    const result = db.prepare("UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ? AND read_at IS NULL").run(new Date().toISOString(), Number(readMatch[1]), context.user.id);
+    return sendJson(response, result.changes ? 200 : 404, result.changes ? { ok: true } : { message: "Not found" });
+  }
+  for (const mod of modules) {
+    if (mod.prefix && url.pathname.startsWith(mod.prefix)) return mod.handle(request, response, url, context);
   }
   return sendJson(response, 404, { message: "Not found" });
+}
+
+async function changePassword(request, response, context) {
+  const body = await readJson(request, 4096);
+  const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
+  const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+  if (!verifyPassword(currentPassword, context.user.password_salt, context.user.password_hash)) {
+    audit(context.user.id, "PASSWORD_CHANGE_FAILED", context.user.username, request);
+    return sendJson(response, 400, { message: "Current password is incorrect" });
+  }
+  const problem = validatePasswordPolicy(newPassword, context.user);
+  if (problem) return sendJson(response, 400, { message: problem });
+  const hashed = hashPassword(newPassword.normalize("NFKC"));
+  db.prepare("UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?").run(hashed.salt, hashed.hash, context.user.id);
+  // End every other session so a stolen session cannot outlive the password change.
+  db.prepare("DELETE FROM sessions WHERE user_id = ? AND id <> ?").run(context.user.id, context.session.id);
+  audit(context.user.id, "PASSWORD_CHANGED", context.user.username, request);
+  return sendJson(response, 200, { ok: true });
+}
+
+// NIST SP 800-63B-4 (2025): at least 15 characters when the password is the only factor,
+// no composition rules, no forced periodic change, and new passwords checked against a blocklist.
+const passwordBlocklist = new Set([
+  "password", "passw0rd", "password1", "password123", "123456789012345", "qwertyuiopasdfg", "iloveyou",
+  "letmein", "welcome", "admin", "administrator", "changeme", "secureaware", "biztat", "biztatsolutions",
+  "abc123", "111111111111111", "000000000000000", "aaaaaaaaaaaaaaa", "qwerty123456789", "trustno1"
+]);
+
+function validatePasswordPolicy(password, user = null) {
+  if (typeof password !== "string") return "Password is required";
+  const normalized = password.normalize("NFKC");
+  const length = [...normalized].length;
+  if (length < 15) return "Use at least 15 characters. A passphrase of several unrelated words works well.";
+  if (length > 128) return "Use at most 128 characters";
+  const compact = normalized.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (passwordBlocklist.has(normalized.toLowerCase()) || passwordBlocklist.has(compact)) return "This password is on the list of common or breached passwords";
+  if (/^(.)\1+$/.test(normalized)) return "Do not use a single repeated character";
+  const remainder = ["password", "secureaware", "biztat", "qwerty", "123456", "admin", "welcome"]
+    .reduce((text, word) => text.replaceAll(word, ""), compact);
+  if (remainder.length < 6) return "This password is too close to a common password";
+  if (user && compact.includes(user.username.toLowerCase().replace(/[^a-z0-9]/g, ""))) return "Do not include your username";
+  return null;
+}
+
+function notify(userId, type, title, body, link = null) {
+  db.prepare("INSERT INTO notifications (user_id,type,title,body,link,created_at) VALUES (?,?,?,?,?,?)")
+    .run(userId, String(type).slice(0, 40), String(title).slice(0, 160), String(body).slice(0, 1000), link ? String(link).slice(0, 240) : null, new Date().toISOString());
 }
 
 async function login(request, response) {
@@ -117,6 +219,7 @@ async function login(request, response) {
   const expiresAt = new Date(now.getTime() + sessionIdleMs).toISOString();
   statements.insertSession.run(sessionId, user.id, csrfToken, expiresAt, now.toISOString(), now.toISOString());
   audit(user.id, "LOGIN_SUCCESS", user.username, request);
+  runModuleHook("onLogin", user);
   response.setHeader("Set-Cookie", cookie("secureaware_session", sessionId, { httpOnly: true, sameSite: "Strict", maxAge: Math.floor(sessionIdleMs / 1000) }));
   return sendJson(response, 200, { user: publicUser(user), csrfToken });
 }
@@ -196,6 +299,21 @@ function seedFoundation() {
   db.prepare("INSERT INTO audit_events (action,target,created_at) VALUES (?,?,?)").run("SYSTEM_INITIALIZED", "SecureAware foundation seed", now);
 }
 
+// Extra fictional demo users so department scoping can be demonstrated. Safe to re-run.
+function seedDemoUsers() {
+  const now = new Date().toISOString();
+  const insert = db.prepare("INSERT OR IGNORE INTO users (username,display_name,role,department,password_salt,password_hash,created_at) VALUES (?,?,?,?,?,?,?)");
+  for (const [username, name, role, department, password] of [
+    ["dev.demo", "Developer Demo", "Employee", "Development", "DeveloperPass!2026"],
+    ["consultant.demo", "Consultant Demo", "Employee", "Consulting", "ConsultantPass!2026"],
+    ["manager.consulting", "Consulting Manager Demo", "Department Manager", "Consulting", "ConsultManagerPass!2026"]
+  ]) {
+    if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) continue;
+    const hashed = hashPassword(password);
+    insert.run(username, name, role, department, hashed.salt, hashed.hash, now);
+  }
+}
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   return { salt, hash: crypto.scryptSync(password, salt, 64).toString("hex") };
 }
@@ -205,12 +323,13 @@ function verifyPassword(password, salt, expectedHash) {
   return crypto.timingSafeEqual(actual, Buffer.from(expectedHash, "hex"));
 }
 
-async function readJson(request) {
+async function readJson(request, limit = bodyLimitBytes) {
+  if (Number(request.headers["content-length"] || 0) > limit) throw publicError(413, "Request body is too large");
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > bodyLimitBytes) throw publicError(413, "Request body is too large");
+    if (size > limit) throw publicError(413, "Request body is too large");
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
@@ -227,7 +346,7 @@ function publicUser(user) {
 
 function serveStatic(response, requestPath) {
   const resolved = path.normalize(path.join(publicDir, requestPath === "/" ? "index.html" : requestPath));
-  const filePath = resolved.startsWith(publicDir) && fs.existsSync(resolved) && fs.statSync(resolved).isFile() ? resolved : path.join(publicDir, "index.html");
+  const filePath = resolved.startsWith(publicDir + path.sep) &&fs.existsSync(resolved) && fs.statSync(resolved).isFile() ? resolved : path.join(publicDir, "index.html");
   response.writeHead(200, { "content-type": contentType(filePath) });
   fs.createReadStream(filePath).pipe(response);
 }
@@ -236,6 +355,7 @@ function contentType(filePath) {
   if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
   if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
+  if (filePath.endsWith(".svg")) return "image/svg+xml";
   return "application/octet-stream";
 }
 
@@ -244,11 +364,21 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-function sendCsv(response, rows) {
-  const fields = ["id", "created_at", "username", "action", "target", "ip_address"];
-  const csv = [fields.join(","), ...rows.map((row) => fields.map((field) => `"${String(row[field] ?? "").replaceAll('"', '""')}"`).join(","))].join("\n");
-  response.writeHead(200, { "content-type": "text/csv; charset=utf-8", "content-disposition": "attachment; filename=audit.csv" });
-  response.end(csv);
+// Spreadsheet apps execute cells that start with = + - @ (and tab/CR), so prefix them with a quote.
+function csvCell(value) {
+  let text = String(value ?? "");
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function toCsv(rows, fields) {
+  return [fields.map(csvCell).join(","), ...rows.map((row) => fields.map((field) => csvCell(row[field])).join(","))].join("\r\n");
+}
+
+function sendCsv(response, rows, fields, filename) {
+  const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, "_");
+  response.writeHead(200, { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${safeName}"`, "cache-control": "no-store" });
+  response.end(toCsv(rows, fields));
 }
 
 function applySecurityHeaders(response) {
