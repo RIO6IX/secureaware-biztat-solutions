@@ -5,8 +5,8 @@ SecureAware is an information security policy awareness and compliance managemen
 ## Branches
 
 - `main`: shared secure foundation.
-- `chanuka`: Member 3 - Security Training, Quiz and Assessment (this branch).
 - `sanduni`: Member 2 - Policy Management, Assignment and Acknowledgement.
+- `chanuka`: Member 3 - Security Training, Quiz and Assessment.
 - `shaeed028`: Member 4 - Compliance dashboard and reporting.
 
 ## Run
@@ -17,7 +17,7 @@ Requires Node.js 22.5 or later (uses the built-in `node:sqlite`). No npm package
 npm run dev
 ```
 
-Open `http://127.0.0.1:4000`. The database is created in `data/secureaware.sqlite` on first start, with the six training courses, the Training Needs Matrix and some fictional demo activity. Set `SECUREAWARE_DEMO_DATA=off` to skip the demo activity.
+Open `http://127.0.0.1:4000`. The database is created in `data/secureaware.sqlite` on first start, with the eight Biztat policies, the six training courses, the Training Needs Matrix and some fictional demo activity. Set `SECUREAWARE_DEMO_DATA=off` to skip the demo activity. `POLICY_MIN_READ_SCALE=0.2` shortens the minimum policy reading time for live demos.
 
 ## Test
 
@@ -47,6 +47,32 @@ All accounts and people are fictional.
 | Department Manager | `manager.consulting` | `ConsultManagerPass!2026` | Consulting |
 | Security/HR Admin | `security.admin` | `AdminPass!2026` | Information Security |
 | System Admin | `system.admin` | `SystemPass!2026` | IT |
+
+## Policy module (branch `sanduni`)
+
+For employees (every role):
+
+- My policies inbox with Action required, Overdue, Acknowledged and All company policies tabs, search and category filter.
+- Policy reader with a table of contents, reading progress, a "What changed" callout and print/PDF.
+- Acknowledgement that unlocks only after the server confirms the reader reached the end. It needs an attestation and the typed full name, and gives a printable receipt with the SHA-256 of the exact text.
+- Questions to the policy owner (answers shared anonymously) and time-limited exception requests.
+- Privacy notice and a downloadable personal acknowledgement record.
+
+For reviewers: a review queue to approve or request changes. Reviewers from at least two groups (for example IT and Management) must approve, and an author can never approve their own version.
+
+For Department Managers: team policy compliance (own department only) with *Send reminder*.
+
+For Security/HR Admin and System Admin:
+
+- Policy library, markdown editor with live preview, and Create new version (minor or major, with or without re-acknowledgement).
+- Immutable published versions (409 on edit), version history and side-by-side or inline comparison.
+- Assignments to departments, roles or users with a recipient preview; only published policies can be assigned.
+- Compliance by policy, department and person, evidence table and formula-safe CSV export.
+- Review calendar (ISO/IEC 27001 A 5.1), questions and exceptions queues, and a standards alignment page.
+
+Eight researched Biztat policies are seeded, including the Acceptable Use Policy v1.0 → v1.1, a Password Policy based on NIST SP 800-63B-4, a Data Classification Policy with the current PDPA status, and a BYOD policy waiting for approval.
+
+See [docs/POLICY_MODULE.md](docs/POLICY_MODULE.md), [docs/VIVA_NOTES_sanduni.md](docs/VIVA_NOTES_sanduni.md), [docs/TESTING.md](docs/TESTING.md) and [docs/DEMO_SCRIPT_POLICY.md](docs/DEMO_SCRIPT_POLICY.md).
 
 ## Training module (branch `chanuka`)
 
@@ -90,7 +116,7 @@ Browser (ES modules, hash router, DOM builder - no innerHTML)
 Node HTTP server (server/index.js)
    |  Auth, sessions, CSRF, RBAC, audit, notifications, CSV, password policy
    |  Module discovery: server/modules/<name>/index.js
-Feature modules (server/modules/training/ ...)
+Feature modules (server/modules/policy/, server/modules/training/ ...)
    |
 SQLite (node:sqlite, parameterised statements only)
 ```
@@ -99,6 +125,8 @@ SQLite (node:sqlite, parameterised statements only)
 
 ```text
 users -> sessions, audit_events, notifications
+policies -> policy_versions -> policy_reviews, policy_read_events, policy_acknowledgements, policy_questions
+policies -> policy_assignments, policy_exceptions
 users -> lesson_progress -> training_lessons -> training_courses
 users -> quiz_attempts -> quiz_answers, certificates
 training_courses -> training_questions -> training_options

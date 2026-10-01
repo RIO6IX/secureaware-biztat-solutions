@@ -2,7 +2,7 @@
 
 Run `npm run build` and `npm test` (Node's built-in `node --test`). Each test file uses its own temporary SQLite database. Demo activity is switched off in tests with `SECUREAWARE_DEMO_DATA=off`.
 
-Latest run on branch `chanuka`, 2026-09-26: **32 tests, 32 passed, 0 failed.**
+Latest run on branch `sanduni` (foundation + training + policy), 2026-10-01: **56 tests, 56 passed, 0 failed** (7 foundation, 25 training, 24 policy).
 
 ## Foundation (`tests/smoke.test.js`)
 
@@ -49,7 +49,44 @@ Latest run on branch `chanuka`, 2026-09-26: **32 tests, 32 passed, 0 failed.**
 | 24 | Invalid ids, enums, malformed JSON, oversized bodies, wrong method | 400 / 413 / 405 | Passing |
 | 25 | Audit completeness; real actor; no answers, passwords or session ids | as described | Passing |
 
-## Manual browser checks (headless Chrome, 2026-09-26)
+## Policy module (`tests/policy.test.js`)
+
+| # | Case | Expected | Status |
+| --- | --- | --- | --- |
+| 1 | Seed policies have all ten sections and cite sources; AUP has v1.0 and v1.1; password rules follow NIST SP 800-63B-4; BYOD is in review | valid | Passing |
+| 2 | Migration and seed run twice | idempotent | Passing |
+| 3 | Unauthenticated access to the policy API | 401 | Passing |
+| 4 | State change with a missing or forged CSRF token | 403 | Passing |
+| 5 | Employee creates, edits, publishes, assigns, reads evidence or the team view | 403 | Passing |
+| 6 | Inbox uses the session identity; `?userId=` ignored; drafts and unassigned policies hidden | as described | Passing |
+| 7 | Acknowledge before reaching the end | 403 | Passing |
+| 8 | "End" reported before the minimum reading time | 409 with seconds remaining | Passing |
+| 9 | Acknowledge an unassigned policy | 403 (reader 404) | Passing |
+| 10 | Typed name mismatch; attestation not ticked | 400 / 400 | Passing |
+| 11 | Receipt uses the server's version, statement and SHA-256 of the exact text; repeat returns the same receipt; no IP column | 201 then 200 | Passing |
+| 12 | Employee reads another employee's receipt, record or team view | 404 / empty / 403 | Passing |
+| 13 | Manager limited to own department; other department's member, evidence and reminders | 404 / 403 / 404; reminder throttled 429 | Passing |
+| 14 | Edit a published or superseded version | 409 `create_new_version` | Passing |
+| 15 | Author as reviewer, one reviewer group, author approves own version, non-reviewer decides | 400 / 400 / 403 / 403 | Passing |
+| 16 | Publish with no approvals, one approval; changes requested returns draft; resubmit and publish | 409 / 409 / draft / 200 | Passing |
+| 17 | Assign a draft policy; unknown department; recipient preview; assignment appears in inbox | 400 / 400 / list / pending | Passing |
+| 18 | New version supersedes the old one, notifies and requires re-acknowledgement; superseded version acknowledged; minor version keeps compliance | needs_reack / 400 / complete | Passing |
+| 19 | Version comparison returns a line diff as plain data; bad labels | ops / 400 | Passing |
+| 20 | Status calculation: pending, overdue, exempt, complete, needs re-acknowledgement with a fresh deadline | as described | Passing |
+| 21 | Evidence CSV is admin-only, audited and formula-safe (`=HYPERLINK` neutralised) | `'=` prefix | Passing |
+| 22 | Questions and exceptions; anonymous public answers; expiry validation; audit completeness, real actor, no passwords or session ids | as described | Passing |
+| 23 | Invalid labels, categories, dates, slugs, ids, wrong method, oversized body | 400 / 405 / 413 | Passing |
+| 24 | Evidence for versions retired more than 6 years ago is purged and audited | purged | Passing |
+
+## Manual browser checks: policy module (2026-10-01)
+
+| Check | Result |
+| --- | --- |
+| Employee inbox tabs and counts, reader with contents and What changed callout, read-to-end unlock, wrong name rejected, receipt shown | Pass |
+| Admin library, editor preview, create v1.2 from history, submit to IT and Management reviewers, editor locked during review | Pass |
+| History, side-by-side and inline compare, assignments, compliance, calendar, questions, exceptions, research, team view | Pass, no console errors or CSP violations |
+
+## Manual browser checks: training module (headless Chrome, 2026-09-26)
 
 | Check | Result |
 | --- | --- |
