@@ -25,6 +25,14 @@ npm run build
 npm test
 ```
 
+## Deploy to Render
+
+The included `render.yaml` configures a Node web service and a persistent disk for the SQLite database. In Render, create a new Blueprint from this repository and apply the `secureaware` service. A persistent disk requires a paid web service plan.
+
+The service runs the build and test commands before starting. Render supplies `PORT`; the service binds to `0.0.0.0` in production, and the database is stored at `/var/data/secureaware.sqlite` on the persistent disk. Back up the database regularly using the backup script and store backups somewhere outside the service disk.
+
+This project seeds fixed demo accounts into a new database. Keep the deployment limited to demonstration data; do not use real employee credentials or confidential data.
+
 ## Seed Accounts
 
 | Role | Username | Password |

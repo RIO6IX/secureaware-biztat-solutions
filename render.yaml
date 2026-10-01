@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: secureaware
+    runtime: node
+    plan: starter
+    buildCommand: npm run build && npm test
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: secureaware-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SECUREAWARE_DB
+        value: /var/data/secureaware.sqlite

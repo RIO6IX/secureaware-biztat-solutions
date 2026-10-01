@@ -286,8 +286,9 @@ function publicError(status, message) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`SecureAware running at http://127.0.0.1:${port}`);
+  const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+  server.listen(port, host, () => {
+    console.log(`SecureAware listening on ${host}:${port}`);
   });
 }
 
