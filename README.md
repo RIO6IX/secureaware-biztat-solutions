@@ -17,7 +17,7 @@ Requires Node.js 22.5 or later (uses the built-in `node:sqlite`). No npm package
 npm run dev
 ```
 
-Open `http://127.0.0.1:4000`. The database is created in `data/secureaware.sqlite` on first start, with the eight Biztat policies, the six training courses, the Training Needs Matrix and some fictional demo activity. Set `SECUREAWARE_DEMO_DATA=off` to skip the demo activity. `POLICY_MIN_READ_SCALE=0.2` shortens the minimum policy reading time for live demos.
+Open `http://127.0.0.1:4000`. The database is created in `data/secureaware.sqlite` on first start, with the eight Biztat policies and six training courses. Local development seeds fictional demo accounts and activity; set `SECUREAWARE_DEMO_DATA=off` to skip the sample activity. `POLICY_MIN_READ_SCALE=0.2` shortens the minimum policy reading time for live demos.
 
 ## Test
 
@@ -30,13 +30,15 @@ npm test
 
 The included `render.yaml` configures a free Node web service for an academic demonstration. In Render, create a new Blueprint from this repository and apply the `secureaware` service.
 
-The service runs the build and test commands before starting. Render supplies `PORT`, and the service binds to `0.0.0.0` in production. Free Render services use an ephemeral filesystem, so the SQLite database can reset after a restart, spin-down or redeployment. The fixed demonstration records are seeded again when a new database is created.
+The service runs the build and test commands before starting. Render supplies `PORT`, and the service binds to `0.0.0.0` in production. Free Render services use an ephemeral filesystem, so SQLite data can reset after a restart, spin-down or redeployment. Production does not seed demo users or sample activity by default. Set `SECUREAWARE_DEMO_DATA=on` only for an isolated demonstration; known seeded passwords are rejected in production when this setting is not enabled. Demo records are seeded again when a new database is created with that opt-in enabled.
 
-This project seeds fixed demo accounts into a new database. Keep the deployment limited to demonstration data; do not use real employee credentials or confidential data.
+## Educational Use and Readiness
 
-## Seed Accounts
+The sign-in screen warns users not to enter real learner or sensitive personal data until the institution approves the privacy, access, retention and hosting arrangements. This prototype does not include in-app account provisioning or institutional identity-provider integration, and it is not certified for regulatory compliance. Obtain the institution's privacy, safeguarding and security review before using real learner data.
 
-All accounts and people are fictional.
+## Development Seed Accounts
+
+These fictional accounts are seeded only outside production by default. Production seeding requires `SECUREAWARE_DEMO_DATA=on`.
 
 | Role | Username | Password | Department |
 | --- | --- | --- | --- |

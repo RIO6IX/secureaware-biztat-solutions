@@ -49,7 +49,7 @@ export function seedCourses(db) {
 // install. Each item is applied once (tracked in training_meta) and only when the courses it
 // needs exist. Disable with SECUREAWARE_DEMO_DATA=off (the automated tests do).
 export function seedDemoActivity(db) {
-  if (process.env.SECUREAWARE_DEMO_DATA === "off") return;
+  if (process.env.SECUREAWARE_DEMO_DATA === "off" || (process.env.NODE_ENV === "production" && process.env.SECUREAWARE_DEMO_DATA !== "on")) return;
   const done = (key) => Boolean(db.prepare("SELECT 1 FROM training_meta WHERE key = ?").get(`demo:${key}`));
   const mark = (key) => db.prepare("INSERT OR IGNORE INTO training_meta (key, value) VALUES (?, ?)").run(`demo:${key}`, new Date().toISOString());
   const user = (username) => db.prepare("SELECT id FROM users WHERE username = ?").get(username);

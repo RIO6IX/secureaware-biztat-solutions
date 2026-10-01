@@ -64,7 +64,7 @@ export function seedPolicies(db) {
 // Fictional acknowledgements, a question and an exception so the evidence and manager views
 // have history on a fresh install. Applied once; disabled with SECUREAWARE_DEMO_DATA=off.
 export function seedPolicyDemoActivity(db) {
-  if (process.env.SECUREAWARE_DEMO_DATA === "off") return;
+  if (process.env.SECUREAWARE_DEMO_DATA === "off" || (process.env.NODE_ENV === "production" && process.env.SECUREAWARE_DEMO_DATA !== "on")) return;
   if (db.prepare("SELECT 1 FROM policy_meta WHERE key = 'demo:activity'").get()) return;
   const user = (username) => db.prepare("SELECT id, display_name FROM users WHERE username = ?").get(username);
   const version = (slug, label) => db.prepare(`SELECT v.*, p.title FROM policy_versions v JOIN policies p ON p.id = v.policy_id

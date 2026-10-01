@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -36,6 +37,37 @@ test("health endpoint works", async () => {
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true });
   });
+});
+
+test("production demo accounts are opt-in and default credentials are blocked for existing data", () => {
+  const serverModuleUrl = new URL("../server/index.js", import.meta.url).href;
+  const script = `
+    import server from ${JSON.stringify(serverModuleUrl)};
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const response = await fetch("http://127.0.0.1:" + server.address().port + "/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "system.admin", password: "SystemPass!2026" })
+    });
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(process.env.SECUREAWARE_DB);
+    const userCount = db.prepare("SELECT COUNT(*) AS count FROM users").get().count;
+    db.close();
+    await new Promise((resolve) => server.close(resolve));
+    console.log(JSON.stringify({ status: response.status, userCount }));
+  `;
+  const checkDatabase = (name, nodeEnvironment, demoData) => {
+    const environment = { ...process.env, NODE_ENV: nodeEnvironment, SECUREAWARE_DB: path.join(tempDir, name) };
+    if (demoData === undefined) delete environment.SECUREAWARE_DEMO_DATA;
+    else environment.SECUREAWARE_DEMO_DATA = demoData;
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", env: environment });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout.trim());
+  };
+  assert.deepEqual(checkDatabase("legacy-demo.sqlite", "development", "off"), { status: 200, userCount: 7 });
+  assert.deepEqual(checkDatabase("legacy-demo.sqlite", "production"), { status: 401, userCount: 7 });
+  assert.deepEqual(checkDatabase("production.sqlite", "production"), { status: 401, userCount: 0 });
+  assert.deepEqual(checkDatabase("opted-in-production.sqlite", "production", "on"), { status: 200, userCount: 7 });
 });
 
 test("login creates a session and me endpoint returns the user", async () => {

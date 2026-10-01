@@ -12,6 +12,16 @@ const dbPath = process.env.SECUREAWARE_DB || path.join(dataDir, "secureaware.sql
 const port = Number(process.env.PORT || 4000);
 const sessionIdleMs = Number(process.env.SESSION_IDLE_MINUTES || 30) * 60 * 1000;
 const bodyLimitBytes = 1_000_000;
+const demoAccountsEnabled = process.env.NODE_ENV !== "production" || process.env.SECUREAWARE_DEMO_DATA === "on";
+const demoPasswords = new Map([
+  ["employee.demo", "EmployeePass!2026"],
+  ["dev.demo", "DeveloperPass!2026"],
+  ["consultant.demo", "ConsultantPass!2026"],
+  ["manager.demo", "ManagerPass!2026"],
+  ["manager.consulting", "ConsultManagerPass!2026"],
+  ["security.admin", "AdminPass!2026"],
+  ["system.admin", "SystemPass!2026"]
+]);
 
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -61,8 +71,10 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at);
 `);
 
-seedFoundation();
-seedDemoUsers();
+if (demoAccountsEnabled) {
+  seedFoundation();
+  seedDemoUsers();
+}
 
 const statements = {
   userByUsername: db.prepare("SELECT * FROM users WHERE username = ? AND active = 1"),
@@ -207,7 +219,7 @@ async function login(request, response) {
   const username = String(body.username || "").trim();
   const password = String(body.password || "");
   const user = statements.userByUsername.get(username);
-  if (!user || isLocked(user) || !verifyPassword(password, user.password_salt, user.password_hash)) {
+  if (!user || isLocked(user) || isDefaultDemoUser(user) || !verifyPassword(password, user.password_salt, user.password_hash)) {
     if (user) registerFailedLogin(user);
     audit(user?.id ?? null, "LOGIN_FAILED", username || "unknown", request);
     return sendJson(response, 401, { message: "Invalid username or password" });
@@ -255,7 +267,12 @@ function sessionContext(sessionId) {
   const session = statements.sessionById.get(sessionId);
   if (!session) return null;
   const user = statements.userById.get(session.user_id);
-  return user ? { user, session } : null;
+  return user && !isDefaultDemoUser(user) ? { user, session } : null;
+}
+
+function isDefaultDemoUser(user) {
+  const password = demoPasswords.get(user?.username);
+  return !demoAccountsEnabled && Boolean(password && verifyPassword(password, user.password_salt, user.password_hash));
 }
 
 function registerFailedLogin(user) {

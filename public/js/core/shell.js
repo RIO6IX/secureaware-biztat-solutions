@@ -7,6 +7,34 @@ import { toast, withStates, pageHeader, table, field, badge, emptyState } from "
 
 const navItems = [];
 const ADMIN_ROLES = ["Security/HR Admin", "System Admin"];
+const DEFAULT_PREFERENCES = { darkMode: false, showUnreadCount: true };
+
+function preferenceKey() {
+  return `secureaware.preferences.${currentUser()?.username || "guest"}`;
+}
+
+function readPreferences() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(preferenceKey()) || "{}");
+    return { darkMode: saved.darkMode === true, showUnreadCount: saved.showUnreadCount !== false };
+  } catch {
+    return { ...DEFAULT_PREFERENCES };
+  }
+}
+
+function savePreferences(preferences) {
+  try {
+    localStorage.setItem(preferenceKey(), JSON.stringify(preferences));
+  } catch {
+    toast("Settings could not be saved in this browser.", "error");
+  }
+}
+
+function applyTheme() {
+  document.documentElement.dataset.theme = readPreferences().darkMode ? "dark" : "light";
+}
+
+applyTheme();
 
 export function nav(item) {
   navItems.push(item);
@@ -45,16 +73,7 @@ function loginView(root) {
       h("h1", { id: "login-title" }, "Sign in"),
       h("p", { class: "muted" }, "Information security policy awareness and compliance for Biztat Solutions."),
       form,
-      h("details", { class: "demo-accounts" },
-        h("summary", {}, "Demo accounts (fictional)"),
-        h("ul", {},
-          ["employee.demo / EmployeePass!2026 — Employee, Finance",
-            "dev.demo / DeveloperPass!2026 — Employee, Development",
-            "consultant.demo / ConsultantPass!2026 — Employee, Consulting",
-            "manager.demo / ManagerPass!2026 — Manager, Finance",
-            "manager.consulting / ConsultManagerPass!2026 — Manager, Consulting",
-            "security.admin / AdminPass!2026 — Security/HR Admin",
-            "system.admin / SystemPass!2026 — System Admin"].map((line) => h("li", {}, line)))))));
+        h("p", { class: "login-data-note" }, "Use only information approved by your institution. Do not enter real learner or sensitive personal data until privacy, access, retention, and hosting arrangements have been approved."))));
   form.querySelector("input").focus();
 }
 
@@ -75,7 +94,7 @@ async function refreshUnread() {
   const bell = document.getElementById("notification-count");
   if (bell) {
     bell.textContent = unread ? String(unread) : "";
-    bell.hidden = !unread;
+    bell.hidden = !unread || !readPreferences().showUnreadCount;
   }
 }
 
@@ -108,7 +127,6 @@ function shell(root) {
         h("div", { class: "topbar-actions" },
           h("a", { class: "icon-button bell", href: "#/notifications", "aria-label": "Notifications" }, "🔔", h("span", { class: "count", id: "notification-count", hidden: true })),
           h("div", { class: "user-chip" }, h("strong", {}, user.displayName), h("span", {}, `${user.role} · ${user.department}`)),
-          h("a", { class: "button subtle", href: "#/account/password" }, "Password"),
           h("button", { type: "button", on: { click: logout } }, "Sign out"))),
       sidebar,
       h("main", { class: "main" }, content)));
@@ -150,6 +168,7 @@ async function renderRoute(entry) {
 }
 
 export function render() {
+  applyTheme();
   const root = document.getElementById("app");
   if (!getSession()) {
     contentRoot = null;
@@ -184,24 +203,64 @@ function registerCorePages() {
           resolve();
         } } }, "Mark as read"))))) : emptyState("No notifications yet", "Reminders and new assignments will appear here."))), { title: "Notifications" });
 
-  route("/account/password", (container) => {
-    const form = h("form", { class: "stack narrow" },
+  route("/settings", (container) => {
+    let preferences = readPreferences();
+    const darkMode = h("input", { type: "checkbox", id: "setting-dark-mode", checked: preferences.darkMode,
+      on: { change: () => {
+        preferences = { ...preferences, darkMode: darkMode.checked };
+        savePreferences(preferences);
+        applyTheme();
+      } } });
+    const showUnreadCount = h("input", { type: "checkbox", id: "setting-unread-count", checked: preferences.showUnreadCount,
+      on: { change: () => {
+        preferences = { ...preferences, showUnreadCount: showUnreadCount.checked };
+        savePreferences(preferences);
+        refreshUnread();
+      } } });
+    const resetPreferences = h("button", { type: "button", on: { click: () => {
+      preferences = { ...DEFAULT_PREFERENCES };
+      savePreferences(preferences);
+      darkMode.checked = preferences.darkMode;
+      showUnreadCount.checked = preferences.showUnreadCount;
+      applyTheme();
+      refreshUnread();
+    } } }, "Reset preferences");
+    const preferencesPanel = h("section", { class: "panel settings-panel", "aria-labelledby": "settings-preferences-title" },
+      h("h2", { id: "settings-preferences-title" }, "Preferences"),
+      h("p", { class: "muted" }, "These choices are saved for this account in this browser."),
+      h("label", { class: "settings-toggle", for: "setting-dark-mode" }, h("span", {}, "Dark mode"), darkMode),
+      h("label", { class: "settings-toggle", for: "setting-unread-count" }, h("span", {}, "Show unread notification count"), showUnreadCount),
+      resetPreferences);
+    const newPassword = h("input", { type: "password", name: "newPassword", autocomplete: "new-password", required: true, minlength: "15", id: "pw-new" });
+    const confirmPassword = h("input", { type: "password", name: "confirmPassword", autocomplete: "new-password", required: true, minlength: "15", id: "pw-confirm" });
+    const form = h("form", { class: "stack settings-password-form" },
       field("Current password", h("input", { type: "password", name: "currentPassword", autocomplete: "current-password", required: true, id: "pw-current" })),
-      field("New password", h("input", { type: "password", name: "newPassword", autocomplete: "new-password", required: true, minlength: "15", id: "pw-new" }),
+      field("New password", newPassword,
         "At least 15 characters. No special-character rules: a passphrase of four or more unrelated words is strong and easy to remember. Common and breached passwords are refused."),
+      field("Confirm new password", confirmPassword),
       h("button", { class: "primary", type: "submit" }, "Change password"));
+    confirmPassword.addEventListener("input", () => confirmPassword.setCustomValidity(""));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (newPassword.value !== confirmPassword.value) {
+        confirmPassword.setCustomValidity("The new passwords do not match.");
+        confirmPassword.reportValidity();
+        return;
+      }
       try {
-        await api("/api/auth/password", { method: "POST", body: Object.fromEntries(new FormData(form)) });
+        await api("/api/auth/password", { method: "POST", body: { currentPassword: form.elements.currentPassword.value, newPassword: newPassword.value } });
         form.reset();
         toast("Password changed. Other sessions have been signed out.");
       } catch (error) {
         toast(error.message, "error");
       }
     });
-    mount(container, pageHeader("Change password", "Follows NIST SP 800-63B-4: length over complexity, no forced expiry."), h("section", { class: "panel" }, form));
-  }, { title: "Change password" });
+    const passwordPanel = h("section", { class: "panel settings-panel", "aria-labelledby": "settings-password-title" },
+      h("h2", { id: "settings-password-title" }, "Change password"),
+      h("p", { class: "muted" }, "Follows NIST SP 800-63B-4: length over complexity, with no forced expiry."),
+      form);
+    mount(container, pageHeader("Settings", "Preferences and account security."), h("div", { class: "settings-grid" }, preferencesPanel, passwordPanel));
+  }, { title: "Settings" });
 
   route("/audit", (container) => withStates(container, () => api("/api/foundation/audit"), (data) => h("div", {},
     pageHeader("Audit log", "Latest 200 security-relevant events. Passwords, session IDs and quiz answers are never logged.",
@@ -217,6 +276,7 @@ function registerCorePages() {
 export function boot(modules) {
   registerCorePages();
   modules.forEach((module) => module.register({ route, nav, navigate }));
+  nav({ section: "Account", label: "Settings", href: "#/settings", icon: "⚙" });
   window.addEventListener("hashchange", () => {
     if (getSession() && currentPath() !== "/notifications") refreshUnread();
   });
