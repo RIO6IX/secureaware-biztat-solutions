@@ -1,514 +1,354 @@
-import http from "node:http";
+import crypto from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "public");
+const dataDir = path.join(root, "data");
+const dbPath = process.env.SECUREAWARE_DB || path.join(dataDir, "secureaware.sqlite");
 const port = Number(process.env.PORT || 4000);
+const sessionIdleMs = Number(process.env.SESSION_IDLE_MINUTES || 30) * 60 * 1000;
+const bodyLimitBytes = 1_000_000;
 
-const daysFromNow = (offset) => {
-  const date = new Date();
-  date.setUTCHours(12, 0, 0, 0);
-  date.setUTCDate(date.getUTCDate() + offset);
-  return date.toISOString().slice(0, 10);
+fs.mkdirSync(dataDir, { recursive: true });
+
+const db = new DatabaseSync(dbPath);
+db.exec("PRAGMA foreign_keys = ON");
+db.exec("PRAGMA journal_mode = WAL");
+db.exec(`
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('Employee','Department Manager','Security/HR Admin','System Admin')),
+  department TEXT NOT NULL,
+  password_salt TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  failed_login_count INTEGER NOT NULL DEFAULT 0,
+  locked_until TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  csrf_token TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS audit_events (
+  id INTEGER PRIMARY KEY,
+  actor_user_id INTEGER REFERENCES users(id),
+  action TEXT NOT NULL,
+  target TEXT NOT NULL,
+  ip_address TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  link TEXT,
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at);
+`);
+
+seedFoundation();
+seedDemoUsers();
+
+const statements = {
+  userByUsername: db.prepare("SELECT * FROM users WHERE username = ? AND active = 1"),
+  userById: db.prepare("SELECT * FROM users WHERE id = ? AND active = 1"),
+  sessionById: db.prepare("SELECT * FROM sessions WHERE id = ?"),
+  insertSession: db.prepare("INSERT INTO sessions (id,user_id,csrf_token,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?)"),
+  refreshSession: db.prepare("UPDATE sessions SET expires_at = ?, last_seen_at = ? WHERE id = ?"),
+  deleteSession: db.prepare("DELETE FROM sessions WHERE id = ?"),
+  audit: db.prepare("INSERT INTO audit_events (actor_user_id,action,target,ip_address,created_at) VALUES (?,?,?,?,?)")
 };
 
-const users = [
-  { id: 1, name: "Nimal Perera", username: "nimal.manager", department: "Leadership", role: "Management", policiesAssigned: 6, policiesAcknowledged: 6, trainingAssigned: 4, trainingCompleted: 4, quizScore: 94, lastActivity: daysFromNow(-1) },
-  { id: 2, name: "Ayesha Fernando", username: "ayesha.manager", department: "Leadership", role: "Management", policiesAssigned: 6, policiesAcknowledged: 5, trainingAssigned: 4, trainingCompleted: 4, quizScore: 88, lastActivity: daysFromNow(-2) },
-  { id: 3, name: "Kavindu Silva", username: "kavindu.consultant", department: "Consulting", role: "Consultant", policiesAssigned: 5, policiesAcknowledged: 5, trainingAssigned: 4, trainingCompleted: 4, quizScore: 91, lastActivity: daysFromNow(-1) },
-  { id: 4, name: "Dinithi Jayasinghe", username: "dinithi.consultant", department: "Consulting", role: "Consultant", policiesAssigned: 5, policiesAcknowledged: 4, trainingAssigned: 4, trainingCompleted: 3, quizScore: 76, lastActivity: daysFromNow(-4) },
-  { id: 5, name: "Ravindu Senanayake", username: "ravindu.consultant", department: "Consulting", role: "Consultant", policiesAssigned: 5, policiesAcknowledged: 5, trainingAssigned: 4, trainingCompleted: 4, quizScore: 86, lastActivity: daysFromNow(-2) },
-  { id: 6, name: "Tharushi Maduranga", username: "tharushi.marketing", department: "Marketing", role: "Marketing", policiesAssigned: 5, policiesAcknowledged: 4, trainingAssigned: 3, trainingCompleted: 2, quizScore: 68, lastActivity: daysFromNow(-7) },
-  { id: 7, name: "Sahan Wijesinghe", username: "sahan.marketing", department: "Marketing", role: "Marketing", policiesAssigned: 5, policiesAcknowledged: 5, trainingAssigned: 3, trainingCompleted: 3, quizScore: 82, lastActivity: daysFromNow(-3) },
-  { id: 8, name: "Isuru Gunawardena", username: "isuru.contractor", department: "Development", role: "External Contractor", policiesAssigned: 4, policiesAcknowledged: 3, trainingAssigned: 4, trainingCompleted: 2, quizScore: 64, lastActivity: daysFromNow(-9) },
-  { id: 9, name: "Piumi Ekanayake", username: "piumi.intern", department: "Internship", role: "Intern", policiesAssigned: 4, policiesAcknowledged: 4, trainingAssigned: 3, trainingCompleted: 3, quizScore: 79, lastActivity: daysFromNow(-2) },
-  { id: 10, name: "Chamod Rathnayake", username: "chamod.intern", department: "Internship", role: "Intern", policiesAssigned: 4, policiesAcknowledged: 3, trainingAssigned: 3, trainingCompleted: 2, quizScore: 72, lastActivity: daysFromNow(-6) }
-];
+// Feature modules live in server/modules/<name>/index.js and are discovered at startup,
+// so each member branch adds its own folder without editing this file.
+const foundation = { db, audit, hasRole, readJson, sendJson, sendCsv, toCsv, publicError, publicUser, notify, validatePasswordPolicy };
+const modules = await loadModules();
 
-const overdueItems = [
-  { id: 1, userId: 8, category: "Policy", title: "Secure Development Policy v1.2", dueDate: daysFromNow(-9), severity: "high", reminderSent: false },
-  { id: 2, userId: 6, category: "Training", title: "Phishing Awareness Refresher", dueDate: daysFromNow(-7), severity: "high", reminderSent: true },
-  { id: 3, userId: 4, category: "Training", title: "Client Data Handling", dueDate: daysFromNow(-4), severity: "medium", reminderSent: false },
-  { id: 4, userId: 2, category: "Policy", title: "Remote Working Policy v2.0", dueDate: daysFromNow(-3), severity: "medium", reminderSent: false },
-  { id: 5, userId: 10, category: "Policy", title: "Acceptable Use Policy v1.0", dueDate: daysFromNow(-2), severity: "low", reminderSent: true }
-];
-
-let notifications = [
-  { id: 1, type: "risk", title: "High-risk compliance item", message: "Secure Development Policy acknowledgement is 9 days overdue.", createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(), read: false },
-  { id: 2, type: "training", title: "Training completion improved", message: "Consulting reached 92% training completion this week.", createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), read: false },
-  { id: 3, type: "policy", title: "Policy version published", message: "Remote Working Policy v2.0 is now included in compliance reporting.", createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(), read: true },
-  { id: 4, type: "report", title: "Weekly report ready", message: "The weekly executive compliance summary is ready to export.", createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(), read: true }
-];
-
-let notificationSettings = {
-  assignmentCreated: true,
-  dueSoon: true,
-  overdue: true,
-  weeklyDigest: true
-};
-
-const auditEvents = [
-  { id: 1, actor: "compliance.admin", action: "REPORT_VIEWED", target: "Executive compliance summary", createdAt: new Date(Date.now() - 40 * 60 * 1000).toISOString() },
-  { id: 2, actor: "system", action: "REMINDER_SENT", target: "Phishing Awareness Refresher", createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString() },
-  { id: 3, actor: "policy.admin", action: "POLICY_PUBLISHED", target: "Remote Working Policy v2.0", createdAt: new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString() },
-  { id: 4, actor: "training.admin", action: "TRAINING_ASSIGNED", target: "Client Data Handling", createdAt: new Date(Date.now() - 29 * 60 * 60 * 1000).toISOString() }
-];
-
-let nextPolicyId = 5;
-let nextPolicyAssignmentId = 5;
-let nextAcknowledgementId = 3;
-
-const policies = [
-  {
-    id: 1,
-    title: "Acceptable Use Policy",
-    category: "Information Security",
-    version: "1.0",
-    owner: "Information Security",
-    status: "published",
-    effectiveDate: daysFromNow(-22),
-    summary: "Defines approved use of Biztat Solutions systems, internet, email and company information assets.",
-    content: "Employees must use company systems for approved business purposes, protect credentials, avoid unauthorized software and report suspected misuse."
-  },
-  {
-    id: 2,
-    title: "Password and MFA Policy",
-    category: "Access Control",
-    version: "1.1",
-    owner: "IT Security",
-    status: "published",
-    effectiveDate: daysFromNow(-18),
-    summary: "Sets passphrase, password manager and multi-factor authentication requirements.",
-    content: "Passwords must be unique, protected and not shared. MFA must be enabled for approved business systems and unexpected prompts must be reported."
-  },
-  {
-    id: 3,
-    title: "Remote Work Security Policy",
-    category: "Remote Work",
-    version: "2.0",
-    owner: "Human Resources",
-    status: "published",
-    effectiveDate: daysFromNow(-8),
-    summary: "Explains secure remote access, device handling, network use and home-working expectations.",
-    content: "Remote work requires approved devices, secure networks, screen privacy and company authorization before accessing client information."
-  },
-  {
-    id: 4,
-    title: "Secure Development Policy",
-    category: "Application Security",
-    version: "1.2",
-    owner: "Engineering Security",
-    status: "draft",
-    effectiveDate: "",
-    summary: "Draft policy for input validation, dependency review, secrets handling and secure release checks.",
-    content: "Developers must validate input, keep dependencies reviewed, protect secrets and follow secure review practices before release."
-  }
-];
-
-const policyAssignments = [
-  { id: 1, policyId: 1, targetType: "role", targetValue: "Consultant", dueDate: daysFromNow(8), status: "assigned" },
-  { id: 2, policyId: 2, targetType: "department", targetValue: "Marketing", dueDate: daysFromNow(12), status: "assigned" },
-  { id: 3, policyId: 3, targetType: "department", targetValue: "Leadership", dueDate: daysFromNow(-3), status: "assigned" },
-  { id: 4, policyId: 1, targetType: "user", targetValue: "isuru.contractor", dueDate: daysFromNow(-9), status: "assigned" }
-];
-
-const acknowledgements = [
-  { id: 1, policyId: 1, policyVersion: "1.0", userId: 3, statement: "I have read and understood this policy.", acknowledgedAt: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString() },
-  { id: 2, policyId: 2, policyVersion: "1.1", userId: 6, statement: "I agree to follow this policy.", acknowledgedAt: new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString() }
-];
-
-let nextQuizAttemptId = 5;
-
-const learningModules = [
-  {
-    id: 1,
-    title: "Recognise and Report Phishing",
-    category: "Email Security",
-    durationMinutes: 20,
-    audience: "All employees",
-    source: "CISA Secure Our World",
-    image: "/training-phishing.svg",
-    summary: "Spot urgent requests, suspicious links, spoofed senders and unusual attachment behaviour before reporting through approved channels.",
-    lessons: [
-      {
-        title: "Pause before acting",
-        body: "Phishing messages often create pressure: urgent payment requests, account warnings, document links, fake delivery notices or unusual requests from someone who appears senior. Slow down and inspect the sender, domain, link destination and context before taking action."
-      },
-      {
-        title: "Verify through a trusted channel",
-        body: "When a message asks for money, credentials, confidential files or system access, verify the request outside the email thread. Use a known phone number, approved chat channel or the service portal rather than replying to the suspicious message."
-      },
-      {
-        title: "Report instead of hiding it",
-        body: "Reporting helps the security team warn others, block malicious links and preserve evidence. Do not forward suspicious content to coworkers unless your organisation's reporting process asks you to do that."
-      }
-    ],
-    quiz: {
-      passMark: 75,
-      questions: [
-        { prompt: "What is the safest response to a suspicious payment email?", options: ["Approve quickly", "Verify through an approved separate channel", "Forward to personal email", "Reply with credentials"], answerIndex: 1 },
-        { prompt: "Which sign can indicate phishing?", options: ["Unexpected urgency", "Normal internal newsletter", "Approved helpdesk ticket", "Scheduled meeting note"], answerIndex: 0 },
-        { prompt: "Where should the email be reported?", options: ["Approved reporting process", "Social media", "Personal inbox", "Deleted items only"], answerIndex: 0 }
-      ]
-    }
-  },
-  {
-    id: 2,
-    title: "Password Manager and MFA Habits",
-    category: "Access Control",
-    durationMinutes: 18,
-    audience: "Employees and contractors",
-    source: "CISA and NIST guidance",
-    image: "/training-password.svg",
-    summary: "Use unique passphrases, approved password managers and multi-factor authentication, then report unexpected approval prompts.",
-    lessons: [
-      {
-        title: "Use unique credentials",
-        body: "A reused password turns one breached website into a business account breach. Use approved password-manager generated passwords or passphrases so every work system has a different secret."
-      },
-      {
-        title: "Treat MFA prompts as security signals",
-        body: "A surprise MFA prompt can mean someone has your password and is trying to sign in. Deny the prompt, change the affected password through the approved process and report the event."
-      },
-      {
-        title: "Protect recovery paths",
-        body: "Attackers target recovery email, phone numbers and backup codes. Keep recovery information current, store backup codes safely and never share one-time passcodes with anyone."
-      }
-    ],
-    quiz: {
-      passMark: 70,
-      questions: [
-        { prompt: "Which password habit is strongest?", options: ["Reuse one memorable password", "Use an approved password manager", "Write passwords on paper", "Share passwords with coworkers"], answerIndex: 1 },
-        { prompt: "Why report unexpected MFA prompts?", options: ["They may show credential misuse", "They improve performance", "They are always harmless", "They replace security policy"], answerIndex: 0 }
-      ]
-    }
-  },
-  {
-    id: 3,
-    title: "Policy Acknowledgement Responsibilities",
-    category: "Governance",
-    durationMinutes: 15,
-    audience: "Policy assignees",
-    source: "NIST SP 800-12 and SP 800-50",
-    image: "/training-policy.svg",
-    summary: "Understand why current-version policy acknowledgement is evidence, and how training supports policy enforcement.",
-    lessons: [
-      {
-        title: "Read the current version",
-        body: "Policy acknowledgement must connect to the exact policy version shown to the learner. If the policy changes, the new version needs its own acknowledgement evidence."
-      },
-      {
-        title: "Know what you are accepting",
-        body: "Acknowledgement means the user has read, understood and agrees to follow the policy. If the language is unclear, the correct action is to ask the policy owner or manager before acknowledging."
-      },
-      {
-        title: "Training supports policy enforcement",
-        body: "Awareness training explains how to follow policy in daily work. Completion, quiz marks and acknowledgement records give managers evidence for follow-up and improvement."
-      }
-    ],
-    quiz: {
-      passMark: 80,
-      questions: [
-        { prompt: "Why must acknowledgements track the policy version?", options: ["To prove the exact version read", "To hide policy changes", "To bypass managers", "To remove audit evidence"], answerIndex: 0 },
-        { prompt: "What should users do if a policy is unclear?", options: ["Ask the owner or manager", "Ignore it", "Publish a new version alone", "Share passwords"], answerIndex: 0 }
-      ]
-    }
-  }
-];
-
-const quizAttempts = [
-  { id: 1, moduleId: 1, userId: 3, score: 100, status: "passed", submittedAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString() },
-  { id: 2, moduleId: 1, userId: 6, score: 67, status: "failed", submittedAt: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString() },
-  { id: 3, moduleId: 2, userId: 8, score: 50, status: "failed", submittedAt: new Date(Date.now() - 11 * 60 * 60 * 1000).toISOString() },
-  { id: 4, moduleId: 3, userId: 2, score: 100, status: "passed", submittedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() }
-];
-
-const trendByPeriod = {
-  30: [72, 75, 77, 79, 82, 84, 86],
-  60: [64, 67, 70, 73, 77, 81, 86],
-  90: [58, 62, 66, 70, 75, 80, 86]
-};
-
-function percent(completed, total) {
-  return total === 0 ? 0 : Math.round((completed / total) * 100);
-}
-
-function riskFor(user) {
-  const policyRate = percent(user.policiesAcknowledged, user.policiesAssigned);
-  const trainingRate = percent(user.trainingCompleted, user.trainingAssigned);
-  if (policyRate < 80 || trainingRate < 70 || user.quizScore < 70) return "high";
-  if (policyRate < 100 || trainingRate < 100 || user.quizScore < 80) return "medium";
-  return "low";
-}
-
-function filteredUsers(department) {
-  return !department || department === "All"
-    ? users
-    : users.filter((user) => user.department === department);
-}
-
-function buildDashboard(department = "All", period = 30) {
-  const selectedUsers = filteredUsers(department);
-  const policiesAssigned = selectedUsers.reduce((sum, user) => sum + user.policiesAssigned, 0);
-  const policiesAcknowledged = selectedUsers.reduce((sum, user) => sum + user.policiesAcknowledged, 0);
-  const trainingAssigned = selectedUsers.reduce((sum, user) => sum + user.trainingAssigned, 0);
-  const trainingCompleted = selectedUsers.reduce((sum, user) => sum + user.trainingCompleted, 0);
-  const quizzesPassed = selectedUsers.filter((user) => user.quizScore >= 70).length;
-  const policyRate = percent(policiesAcknowledged, policiesAssigned);
-  const trainingRate = percent(trainingCompleted, trainingAssigned);
-  const quizPassRate = percent(quizzesPassed, selectedUsers.length);
-  const overallRate = Math.round((policyRate + trainingRate + quizPassRate) / 3);
-  const selectedIds = new Set(selectedUsers.map((user) => user.id));
-  const selectedOverdue = overdueItems
-    .filter((item) => selectedIds.has(item.userId))
-    .map((item) => ({
-      ...item,
-      user: users.find((user) => user.id === item.userId),
-      daysOverdue: Math.max(1, Math.ceil((Date.now() - new Date(`${item.dueDate}T23:59:59Z`).getTime()) / 86400000))
-    }));
-
-  const departments = [...new Set(selectedUsers.map((user) => user.department))].map((name) => {
-    const members = selectedUsers.filter((user) => user.department === name);
-    const assignedPolicies = members.reduce((sum, user) => sum + user.policiesAssigned, 0);
-    const acknowledgedPolicies = members.reduce((sum, user) => sum + user.policiesAcknowledged, 0);
-    const assignedTraining = members.reduce((sum, user) => sum + user.trainingAssigned, 0);
-    const completedTraining = members.reduce((sum, user) => sum + user.trainingCompleted, 0);
-    const departmentPolicyRate = percent(acknowledgedPolicies, assignedPolicies);
-    const departmentTrainingRate = percent(completedTraining, assignedTraining);
-    const departmentQuizRate = percent(members.filter((user) => user.quizScore >= 70).length, members.length);
-    return {
-      name,
-      employees: members.length,
-      policyRate: departmentPolicyRate,
-      trainingRate: departmentTrainingRate,
-      overallRate: Math.round((departmentPolicyRate + departmentTrainingRate + departmentQuizRate) / 3)
-    };
+const server = http.createServer((request, response) => {
+  handleRequest(request, response).catch((error) => {
+    if (!error.publicMessage) console.error(error);
+    if (response.headersSent) return response.end();
+    sendJson(response, error.status || 500, { message: error.publicMessage || "Server error" });
   });
+});
 
-  const risks = { low: 0, medium: 0, high: 0 };
-  selectedUsers.forEach((user) => { risks[riskFor(user)] += 1; });
-  const periodValues = trendByPeriod[period] || trendByPeriod[30];
-  const trend = periodValues.map((value, index) => ({
-    label: `W${index + 1}`,
-    value: department === "All" ? value : Math.max(45, Math.min(99, value + overallRate - periodValues.at(-1)))
-  }));
-
-  return {
-    filters: { department, period, departments: ["All", ...new Set(users.map((user) => user.department))] },
-    summary: {
-      overallRate,
-      policyRate,
-      trainingRate,
-      quizPassRate,
-      overdueCount: selectedOverdue.length,
-      highRiskCount: risks.high,
-      employees: selectedUsers.length,
-      unreadNotifications: notifications.filter((notification) => !notification.read).length
-    },
-    trend,
-    departments,
-    risks,
-    overdue: selectedOverdue,
-    activity: auditEvents.slice(0, 6),
-    lastUpdated: new Date().toISOString()
-  };
-}
-
-function reportRows(type, department = "All") {
-  const selectedUsers = filteredUsers(department);
-  if (type === "executive") {
-    return buildDashboard(department).departments.map((item) => ({
-      department: item.name,
-      employees: item.employees,
-      policyCompliance: `${item.policyRate}%`,
-      trainingCompletion: `${item.trainingRate}%`,
-      overallCompliance: `${item.overallRate}%`
-    }));
+async function loadModules() {
+  const modulesDir = path.join(root, "server", "modules");
+  if (!fs.existsSync(modulesDir)) return [];
+  const loaded = [];
+  for (const name of fs.readdirSync(modulesDir).sort()) {
+    const entry = path.join(modulesDir, name, "index.js");
+    if (!fs.existsSync(entry)) continue;
+    const mod = await import(pathToFileURL(entry).href);
+    await mod.init?.(foundation);
+    loaded.push(mod);
   }
-  if (type === "policy") {
-    return selectedUsers.map((user) => ({
-      employee: user.name,
-      department: user.department,
-      assigned: user.policiesAssigned,
-      acknowledged: user.policiesAcknowledged,
-      compliance: `${percent(user.policiesAcknowledged, user.policiesAssigned)}%`,
-      status: user.policiesAcknowledged === user.policiesAssigned ? "Compliant" : "Action required"
-    }));
-  }
-  if (type === "training") {
-    return selectedUsers.map((user) => ({
-      employee: user.name,
-      department: user.department,
-      assigned: user.trainingAssigned,
-      completed: user.trainingCompleted,
-      quizScore: `${user.quizScore}%`,
-      status: user.trainingCompleted === user.trainingAssigned && user.quizScore >= 70 ? "Completed" : "Action required"
-    }));
-  }
-  return selectedUsers.map((user) => ({
-    employee: user.name,
-    department: user.department,
-    role: user.role,
-    policyRate: `${percent(user.policiesAcknowledged, user.policiesAssigned)}%`,
-    trainingRate: `${percent(user.trainingCompleted, user.trainingAssigned)}%`,
-    quizScore: `${user.quizScore}%`,
-    risk: riskFor(user)
-  }));
+  return loaded;
 }
 
-function csvCell(value) {
-  let text = String(value ?? "");
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
-  return `"${text.replaceAll('"', '""')}"`;
-}
-
-function toCsv(rows) {
-  if (!rows.length) return "No data\n";
-  const headers = Object.keys(rows[0]);
-  return [headers.map(csvCell).join(","), ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(","))].join("\n");
-}
-
-function policyById(id) {
-  return policies.find((policy) => policy.id === Number(id));
-}
-
-function policyMatches(user, assignment) {
-  if (assignment.targetType === "department") return user.department === assignment.targetValue;
-  if (assignment.targetType === "role") return user.role === assignment.targetValue;
-  return user.username === assignment.targetValue;
-}
-
-function acknowledgementFor(userId, policy) {
-  return acknowledgements.find((ack) => ack.userId === userId && ack.policyId === policy.id && ack.policyVersion === policy.version);
-}
-
-function policyStats(policy) {
-  return {
-    ...policy,
-    assignmentCount: policyAssignments.filter((assignment) => assignment.policyId === policy.id).length,
-    acknowledgementCount: acknowledgements.filter((ack) => ack.policyId === policy.id && ack.policyVersion === policy.version).length
-  };
-}
-
-function policyComplianceRows() {
-  return policyAssignments.flatMap((assignment) => users
-    .filter((user) => policyMatches(user, assignment))
-    .map((user) => {
-      const policy = policyById(assignment.policyId);
-      const acknowledgement = acknowledgementFor(user.id, policy);
-      const overdue = assignment.dueDate && new Date(`${assignment.dueDate}T23:59:59Z`) < new Date();
-      return {
-        assignmentId: assignment.id,
-        employee: user.name,
-        department: user.department,
-        role: user.role,
-        policy: policy.title,
-        version: policy.version,
-        category: policy.category,
-        dueDate: assignment.dueDate,
-        status: acknowledgement ? "complete" : overdue ? "overdue" : "pending",
-        acknowledgedAt: acknowledgement?.acknowledgedAt ?? null
-      };
-    }));
-}
-
-function assignedPoliciesFor(user) {
-  return policyAssignments
-    .filter((assignment) => policyMatches(user, assignment))
-    .map((assignment) => {
-      const policy = policyById(assignment.policyId);
-      return { ...assignment, policy: policyStats(policy), acknowledgement: acknowledgementFor(user.id, policy) || null };
-    });
-}
-
-function policyOverview() {
-  const rows = policyComplianceRows();
-  const complete = rows.filter((row) => row.status === "complete").length;
-  return {
-    summary: {
-      policies: policies.length,
-      publishedPolicies: policies.filter((policy) => policy.status === "published").length,
-      assignments: policyAssignments.length,
-      acknowledgements: acknowledgements.length,
-      complianceRate: percent(complete, rows.length),
-      overdue: rows.filter((row) => row.status === "overdue").length
-    },
-    policies: policies.map(policyStats),
-    assignments: policyAssignments.map((assignment) => ({ ...assignment, policy: policyById(assignment.policyId) })),
-    complianceRows: rows,
-    acknowledgements: acknowledgements.map((ack) => ({ ...ack, user: users.find((user) => user.id === ack.userId), policy: policyById(ack.policyId) })),
-    employee: users.find((user) => user.username === "isuru.contractor"),
-    researchBasis: [
-      { source: "NIST SP 800-12", use: "Uses signed acknowledgement as evidence that personnel read and understood current requirements." },
-      { source: "NIST CSF 2.0 GV.PO", use: "Keeps policy governance visible through ownership, publication state and review evidence." },
-      { source: "ISO/IEC 27002 policy practice", use: "Separates draft, published and archived policy states with controlled assignment." },
-      { source: "OWASP ASVS", use: "Performs acknowledgement eligibility and version checks on the server." }
-    ]
-  };
-}
-
-function publicLearningModule(module) {
-  return {
-    ...module,
-    quiz: {
-      passMark: module.quiz.passMark,
-      questionCount: module.quiz.questions.length,
-      questions: module.quiz.questions.map((question, questionIndex) => ({
-        id: `${module.id}-${questionIndex + 1}`,
-        prompt: question.prompt,
-        options: question.options.map((text, optionIndex) => ({ id: optionIndex, text }))
-      }))
+function runModuleHook(hook, ...args) {
+  for (const mod of modules) {
+    try {
+      mod[hook]?.(...args);
+    } catch (error) {
+      console.error(`Module hook ${hook} failed`, error);
     }
-  };
+  }
 }
 
-function bestQuizAttempt(userId, moduleId) {
-  const attempts = quizAttempts.filter((attempt) => attempt.userId === userId && attempt.moduleId === moduleId);
-  return attempts.find((attempt) => attempt.status === "passed") || attempts.at(-1) || null;
+async function handleRequest(request, response) {
+  applySecurityHeaders(response);
+  const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
+  if (url.pathname === "/api/health") return sendJson(response, 200, { ok: true });
+  if (request.method === "POST" && url.pathname === "/api/auth/login") return login(request, response);
+  if (request.method === "POST" && url.pathname === "/api/auth/logout") return logout(request, response);
+  if (url.pathname.startsWith("/api/")) return api(request, response, url);
+  return serveStatic(response, url.pathname);
 }
 
-function learningRows() {
-  return users.flatMap((user) => learningModules.map((module) => {
-    const attempt = bestQuizAttempt(user.id, module.id);
-    return {
-      employee: user.name,
-      department: user.department,
-      module: module.title,
-      score: attempt ? `${attempt.score}%` : "-",
-      status: attempt?.status === "passed" ? "complete" : attempt ? "action required" : "not started",
-      submittedAt: attempt?.submittedAt ?? null
-    };
-  }));
+async function api(request, response, url) {
+  const context = requireSession(request, response);
+  if (!context) return sendJson(response, 401, { message: "Authentication required" });
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && request.headers["x-csrf-token"] !== context.session.csrf_token) {
+    audit(context.user.id, "CSRF_REJECTED", url.pathname, request);
+    return sendJson(response, 403, { message: "Request verification failed" });
+  }
+  if (request.method === "GET" && url.pathname === "/api/me") {
+    return sendJson(response, 200, { user: publicUser(context.user), csrfToken: context.session.csrf_token });
+  }
+  if (request.method === "GET" && url.pathname === "/api/foundation/audit") {
+    if (!hasRole(context.user, ["Security/HR Admin", "System Admin"])) return sendJson(response, 403, { message: "Access denied" });
+    return sendJson(response, 200, { auditEvents: auditRows() });
+  }
+  if (request.method === "GET" && url.pathname === "/api/foundation/audit.csv") {
+    if (!hasRole(context.user, ["Security/HR Admin", "System Admin"])) return sendJson(response, 403, { message: "Access denied" });
+    return sendCsv(response, auditRows(), ["id", "created_at", "username", "action", "target", "ip_address"], "audit.csv");
+  }
+  if (request.method === "POST" && url.pathname === "/api/auth/password") return changePassword(request, response, context);
+  if (request.method === "GET" && url.pathname === "/api/notifications") {
+    const rows = db.prepare("SELECT id,type,title,body,link,created_at,read_at FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 100").all(context.user.id);
+    return sendJson(response, 200, { notifications: rows, unreadCount: rows.filter((row) => !row.read_at).length });
+  }
+  const readMatch = url.pathname.match(/^\/api\/notifications\/(\d{1,10})\/read$/);
+  if (request.method === "POST" && readMatch) {
+    const result = db.prepare("UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ? AND read_at IS NULL").run(new Date().toISOString(), Number(readMatch[1]), context.user.id);
+    return sendJson(response, result.changes ? 200 : 404, result.changes ? { ok: true } : { message: "Not found" });
+  }
+  for (const mod of modules) {
+    if (mod.prefix && url.pathname.startsWith(mod.prefix)) return mod.handle(request, response, url, context);
+  }
+  return sendJson(response, 404, { message: "Not found" });
 }
 
-function learningOverview() {
-  const rows = learningRows();
-  const passed = rows.filter((row) => row.status === "complete").length;
-  const scoredAttempts = quizAttempts.length;
-  return {
-    summary: {
-      modules: learningModules.length,
-      quizAttempts: scoredAttempts,
-      completionRate: percent(passed, rows.length),
-      passRate: percent(quizAttempts.filter((attempt) => attempt.status === "passed").length, scoredAttempts),
-      averageScore: scoredAttempts ? Math.round(quizAttempts.reduce((sum, attempt) => sum + attempt.score, 0) / scoredAttempts) : 0
-    },
-    modules: learningModules.map(publicLearningModule),
-    rows,
-    attempts: quizAttempts.map((attempt) => ({
-      ...attempt,
-      user: users.find((user) => user.id === attempt.userId),
-      module: learningModules.find((module) => module.id === attempt.moduleId)
-    })),
-    researchBasis: [
-      { source: "NIST SP 800-50 Rev. 1", use: "Role-based learning, program measurement and continuous improvement." },
-      { source: "NIST CSF 2.0 PR.AT", use: "Personnel receive awareness training aligned to security responsibilities." },
-      { source: "NISTIR 8420", use: "Completion rates, assessment scores and behaviour indicators support awareness measurement." },
-      { source: "CISA Secure Our World", use: "Practical topics include phishing reporting, strong passwords, password managers and MFA." }
-    ]
-  };
+async function changePassword(request, response, context) {
+  const body = await readJson(request, 4096);
+  const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
+  const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+  if (!verifyPassword(currentPassword, context.user.password_salt, context.user.password_hash)) {
+    audit(context.user.id, "PASSWORD_CHANGE_FAILED", context.user.username, request);
+    return sendJson(response, 400, { message: "Current password is incorrect" });
+  }
+  const problem = validatePasswordPolicy(newPassword, context.user);
+  if (problem) return sendJson(response, 400, { message: problem });
+  const hashed = hashPassword(newPassword.normalize("NFKC"));
+  db.prepare("UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?").run(hashed.salt, hashed.hash, context.user.id);
+  // End every other session so a stolen session cannot outlive the password change.
+  db.prepare("DELETE FROM sessions WHERE user_id = ? AND id <> ?").run(context.user.id, context.session.id);
+  audit(context.user.id, "PASSWORD_CHANGED", context.user.username, request);
+  return sendJson(response, 200, { ok: true });
+}
+
+// NIST SP 800-63B-4 (2025): at least 15 characters when the password is the only factor,
+// no composition rules, no forced periodic change, and new passwords checked against a blocklist.
+const passwordBlocklist = new Set([
+  "password", "passw0rd", "password1", "password123", "123456789012345", "qwertyuiopasdfg", "iloveyou",
+  "letmein", "welcome", "admin", "administrator", "changeme", "secureaware", "biztat", "biztatsolutions",
+  "abc123", "111111111111111", "000000000000000", "aaaaaaaaaaaaaaa", "qwerty123456789", "trustno1"
+]);
+
+function validatePasswordPolicy(password, user = null) {
+  if (typeof password !== "string") return "Password is required";
+  const normalized = password.normalize("NFKC");
+  const length = [...normalized].length;
+  if (length < 15) return "Use at least 15 characters. A passphrase of several unrelated words works well.";
+  if (length > 128) return "Use at most 128 characters";
+  const compact = normalized.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (passwordBlocklist.has(normalized.toLowerCase()) || passwordBlocklist.has(compact)) return "This password is on the list of common or breached passwords";
+  if (/^(.)\1+$/.test(normalized)) return "Do not use a single repeated character";
+  const remainder = ["password", "secureaware", "biztat", "qwerty", "123456", "admin", "welcome"]
+    .reduce((text, word) => text.replaceAll(word, ""), compact);
+  if (remainder.length < 6) return "This password is too close to a common password";
+  if (user && compact.includes(user.username.toLowerCase().replace(/[^a-z0-9]/g, ""))) return "Do not include your username";
+  return null;
+}
+
+function notify(userId, type, title, body, link = null) {
+  db.prepare("INSERT INTO notifications (user_id,type,title,body,link,created_at) VALUES (?,?,?,?,?,?)")
+    .run(userId, String(type).slice(0, 40), String(title).slice(0, 160), String(body).slice(0, 1000), link ? String(link).slice(0, 240) : null, new Date().toISOString());
+}
+
+async function login(request, response) {
+  const body = await readJson(request);
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "");
+  const user = statements.userByUsername.get(username);
+  if (!user || isLocked(user) || !verifyPassword(password, user.password_salt, user.password_hash)) {
+    if (user) registerFailedLogin(user);
+    audit(user?.id ?? null, "LOGIN_FAILED", username || "unknown", request);
+    return sendJson(response, 401, { message: "Invalid username or password" });
+  }
+  db.prepare("UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE id = ?").run(user.id);
+  const now = new Date();
+  const sessionId = token();
+  const csrfToken = token();
+  const expiresAt = new Date(now.getTime() + sessionIdleMs).toISOString();
+  statements.insertSession.run(sessionId, user.id, csrfToken, expiresAt, now.toISOString(), now.toISOString());
+  audit(user.id, "LOGIN_SUCCESS", user.username, request);
+  runModuleHook("onLogin", user);
+  response.setHeader("Set-Cookie", cookie("secureaware_session", sessionId, { httpOnly: true, sameSite: "Strict", maxAge: Math.floor(sessionIdleMs / 1000) }));
+  return sendJson(response, 200, { user: publicUser(user), csrfToken });
+}
+
+function logout(request, response) {
+  const sessionId = parseCookies(request).secureaware_session;
+  const context = sessionId ? sessionContext(sessionId) : null;
+  if (context && request.headers["x-csrf-token"] !== context.session.csrf_token) {
+    audit(context.user.id, "CSRF_REJECTED", "/api/auth/logout", request);
+    return sendJson(response, 403, { message: "Request verification failed" });
+  }
+  if (sessionId) statements.deleteSession.run(sessionId);
+  if (context) audit(context.user.id, "LOGOUT", context.user.username, request);
+  response.setHeader("Set-Cookie", cookie("secureaware_session", "", { httpOnly: true, sameSite: "Strict", maxAge: 0 }));
+  return sendJson(response, 200, { ok: true });
+}
+
+function requireSession(request) {
+  const sessionId = parseCookies(request).secureaware_session;
+  if (!sessionId) return null;
+  const context = sessionContext(sessionId);
+  if (!context) return null;
+  if (new Date(context.session.expires_at) <= new Date()) {
+    statements.deleteSession.run(sessionId);
+    return null;
+  }
+  const now = new Date();
+  statements.refreshSession.run(new Date(now.getTime() + sessionIdleMs).toISOString(), now.toISOString(), sessionId);
+  return context;
+}
+
+function sessionContext(sessionId) {
+  const session = statements.sessionById.get(sessionId);
+  if (!session) return null;
+  const user = statements.userById.get(session.user_id);
+  return user ? { user, session } : null;
+}
+
+function registerFailedLogin(user) {
+  const count = user.failed_login_count + 1;
+  const lockedUntil = count >= 5 ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : null;
+  db.prepare("UPDATE users SET failed_login_count = ?, locked_until = ? WHERE id = ?").run(count, lockedUntil, user.id);
+}
+
+function isLocked(user) {
+  return user.locked_until && new Date(user.locked_until) > new Date();
+}
+
+function hasRole(user, roles) {
+  return roles.includes(user.role);
+}
+
+function audit(userId, action, target, request = null) {
+  statements.audit.run(userId, action, String(target).slice(0, 240), request?.socket?.remoteAddress || null, new Date().toISOString());
+}
+
+function auditRows() {
+  return db.prepare(`SELECT ae.id, ae.action, ae.target, ae.ip_address, ae.created_at, u.username, u.display_name
+    FROM audit_events ae LEFT JOIN users u ON u.id = ae.actor_user_id
+    ORDER BY ae.id DESC LIMIT 200`).all();
+}
+
+function seedFoundation() {
+  if (db.prepare("SELECT COUNT(*) AS count FROM users").get().count) return;
+  const now = new Date().toISOString();
+  for (const user of [
+    ["employee.demo", "Employee Demo", "Employee", "Finance", "EmployeePass!2026"],
+    ["manager.demo", "Manager Demo", "Department Manager", "Finance", "ManagerPass!2026"],
+    ["security.admin", "Security HR Admin", "Security/HR Admin", "Information Security", "AdminPass!2026"],
+    ["system.admin", "System Admin", "System Admin", "IT", "SystemPass!2026"]
+  ]) {
+    const [username, name, role, department, password] = user;
+    const hashed = hashPassword(password);
+    db.prepare("INSERT INTO users (username,display_name,role,department,password_salt,password_hash,created_at) VALUES (?,?,?,?,?,?,?)")
+      .run(username, name, role, department, hashed.salt, hashed.hash, now);
+  }
+  db.prepare("INSERT INTO audit_events (action,target,created_at) VALUES (?,?,?)").run("SYSTEM_INITIALIZED", "SecureAware foundation seed", now);
+}
+
+// Extra fictional demo users so department scoping can be demonstrated. Safe to re-run.
+function seedDemoUsers() {
+  const now = new Date().toISOString();
+  const insert = db.prepare("INSERT OR IGNORE INTO users (username,display_name,role,department,password_salt,password_hash,created_at) VALUES (?,?,?,?,?,?,?)");
+  for (const [username, name, role, department, password] of [
+    ["dev.demo", "Developer Demo", "Employee", "Development", "DeveloperPass!2026"],
+    ["consultant.demo", "Consultant Demo", "Employee", "Consulting", "ConsultantPass!2026"],
+    ["manager.consulting", "Consulting Manager Demo", "Department Manager", "Consulting", "ConsultManagerPass!2026"]
+  ]) {
+    if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) continue;
+    const hashed = hashPassword(password);
+    insert.run(username, name, role, department, hashed.salt, hashed.hash, now);
+  }
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  return { salt, hash: crypto.scryptSync(password, salt, 64).toString("hex") };
+}
+
+function verifyPassword(password, salt, expectedHash) {
+  const actual = crypto.scryptSync(password, salt, 64);
+  return crypto.timingSafeEqual(actual, Buffer.from(expectedHash, "hex"));
+}
+
+async function readJson(request, limit = bodyLimitBytes) {
+  if (Number(request.headers["content-length"] || 0) > limit) throw publicError(413, "Request body is too large");
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > limit) throw publicError(413, "Request body is too large");
+    chunks.push(chunk);
+  }
+  if (!chunks.length) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw publicError(400, "Malformed JSON");
+  }
+}
+
+function publicUser(user) {
+  return { id: user.id, username: user.username, displayName: user.display_name, role: user.role, department: user.department };
+}
+
+function serveStatic(response, requestPath) {
+  const resolved = path.normalize(path.join(publicDir, requestPath === "/" ? "index.html" : requestPath));
+  const filePath = resolved.startsWith(publicDir + path.sep) &&fs.existsSync(resolved) && fs.statSync(resolved).isFile() ? resolved : path.join(publicDir, "index.html");
+  response.writeHead(200, { "content-type": contentType(filePath) });
+  fs.createReadStream(filePath).pipe(response);
 }
 
 function contentType(filePath) {
@@ -519,263 +359,66 @@ function contentType(filePath) {
   return "application/octet-stream";
 }
 
-function securityHeaders(contentTypeValue) {
-  return {
-    "content-type": contentTypeValue,
-    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
-    "x-content-type-options": "nosniff",
-    "x-frame-options": "DENY",
-    "referrer-policy": "no-referrer",
-    "permissions-policy": "camera=(), microphone=(), geolocation=()"
-  };
+function sendJson(response, status, body) {
+  response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  response.end(JSON.stringify(body));
 }
 
-function sendJson(response, status, payload) {
-  response.writeHead(status, securityHeaders("application/json; charset=utf-8"));
-  response.end(JSON.stringify(payload));
+// Spreadsheet apps execute cells that start with = + - @ (and tab/CR), so prefix them with a quote.
+function csvCell(value) {
+  let text = String(value ?? "");
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
 }
 
-async function readJson(request) {
-  let body = "";
-  for await (const chunk of request) {
-    body += chunk;
-    if (body.length > 100_000) throw new Error("Request body is too large");
-  }
-  if (!body) return {};
-  try {
-    return JSON.parse(body);
-  } catch {
-    throw new Error("Invalid JSON body");
-  }
+function toCsv(rows, fields) {
+  return [fields.map(csvCell).join(","), ...rows.map((row) => fields.map((field) => csvCell(row[field])).join(","))].join("\r\n");
 }
 
-function serveFile(response, requestPath) {
-  const safeRequestPath = requestPath === "/" ? "index.html" : requestPath.replace(/^\/+/, "");
-  const resolved = path.resolve(publicDir, safeRequestPath);
-  const relative = path.relative(publicDir, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    response.writeHead(404, securityHeaders("text/plain; charset=utf-8"));
-    response.end("Not found");
-    return;
-  }
-  const filePath = fs.existsSync(resolved) && fs.statSync(resolved).isFile() ? resolved : path.join(publicDir, "index.html");
-  response.writeHead(200, securityHeaders(contentType(filePath)));
-  fs.createReadStream(filePath).pipe(response);
+function sendCsv(response, rows, fields, filename) {
+  const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, "_");
+  response.writeHead(200, { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${safeName}"`, "cache-control": "no-store" });
+  response.end(toCsv(rows, fields));
 }
 
-async function handleApi(request, response, url) {
-  const { pathname, searchParams } = url;
-
-  if (request.method === "GET" && pathname === "/api/health") {
-    sendJson(response, 200, { ok: true });
-    return true;
-  }
-  if (request.method === "GET" && pathname === "/api/compliance/dashboard") {
-    sendJson(response, 200, buildDashboard(searchParams.get("department") || "All", Number(searchParams.get("period") || 30)));
-    return true;
-  }
-  if (request.method === "GET" && pathname === "/api/policy/overview") {
-    sendJson(response, 200, policyOverview());
-    return true;
-  }
-  if (request.method === "GET" && pathname === "/api/learning/overview") {
-    sendJson(response, 200, learningOverview());
-    return true;
-  }
-  const learningSubmitMatch = pathname.match(/^\/api\/learning\/modules\/(\d+)\/submit$/);
-  if (request.method === "POST" && learningSubmitMatch) {
-    const module = learningModules.find((item) => item.id === Number(learningSubmitMatch[1]));
-    if (!module) {
-      sendJson(response, 404, { message: "Training module not found." });
-      return true;
-    }
-    const body = await readJson(request);
-    const user = users.find((entry) => entry.id === Number(body.userId)) || users.find((entry) => entry.username === body.username) || users[0];
-    const answers = Array.isArray(body.answers) ? body.answers.map(Number) : [];
-    const correct = module.quiz.questions.filter((question, index) => question.answerIndex === answers[index]).length;
-    const score = Math.round((correct / module.quiz.questions.length) * 100);
-    const attempt = {
-      id: nextQuizAttemptId++,
-      moduleId: module.id,
-      userId: user.id,
-      score,
-      status: score >= module.quiz.passMark ? "passed" : "failed",
-      submittedAt: new Date().toISOString()
-    };
-    quizAttempts.push(attempt);
-    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: user.username, action: "QUIZ_SUBMITTED", target: `${module.title} - ${score}%`, createdAt: attempt.submittedAt });
-    sendJson(response, 201, { attempt });
-    return true;
-  }
-  if (request.method === "GET" && pathname === "/api/policy/policies") {
-    const status = searchParams.get("status");
-    const rows = status ? policies.filter((policy) => policy.status === status) : policies;
-    sendJson(response, 200, { policies: rows.map(policyStats) });
-    return true;
-  }
-  if (request.method === "POST" && pathname === "/api/policy/policies") {
-    const body = await readJson(request);
-    if (!body.title || !body.content) {
-      sendJson(response, 400, { message: "Title and content are required." });
-      return true;
-    }
-    const policy = {
-      id: nextPolicyId++,
-      title: String(body.title).trim(),
-      category: String(body.category || "Information Security").trim(),
-      version: String(body.version || "1.0").trim(),
-      owner: String(body.owner || "Information Security").trim(),
-      status: body.status === "published" ? "published" : "draft",
-      effectiveDate: String(body.effectiveDate || ""),
-      summary: String(body.summary || "").trim(),
-      content: String(body.content).trim()
-    };
-    policies.push(policy);
-    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: "policy.admin", action: "POLICY_CREATED", target: `${policy.title} v${policy.version}`, createdAt: new Date().toISOString() });
-    sendJson(response, 201, { policy: policyStats(policy) });
-    return true;
-  }
-  const policyActionMatch = pathname.match(/^\/api\/policy\/policies\/(\d+)\/(publish|archive)$/);
-  if (request.method === "POST" && policyActionMatch) {
-    const policy = policyById(policyActionMatch[1]);
-    if (!policy) {
-      sendJson(response, 404, { message: "Policy not found." });
-      return true;
-    }
-    policy.status = policyActionMatch[2] === "publish" ? "published" : "archived";
-    if (policy.status === "published" && !policy.effectiveDate) policy.effectiveDate = new Date().toISOString().slice(0, 10);
-    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: "policy.admin", action: `POLICY_${policy.status.toUpperCase()}`, target: `${policy.title} v${policy.version}`, createdAt: new Date().toISOString() });
-    sendJson(response, 200, { policy: policyStats(policy) });
-    return true;
-  }
-  if (request.method === "POST" && pathname === "/api/policy/assignments") {
-    const body = await readJson(request);
-    if (!policyById(body.policyId)) {
-      sendJson(response, 400, { message: "Valid policy is required." });
-      return true;
-    }
-    const assignment = {
-      id: nextPolicyAssignmentId++,
-      policyId: Number(body.policyId),
-      targetType: ["department", "role", "user"].includes(body.targetType) ? body.targetType : "department",
-      targetValue: String(body.targetValue || "Consulting").trim(),
-      dueDate: String(body.dueDate || daysFromNow(14)),
-      status: "assigned"
-    };
-    policyAssignments.push(assignment);
-    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: "policy.admin", action: "POLICY_ASSIGNED", target: `${assignment.targetType}:${assignment.targetValue}`, createdAt: new Date().toISOString() });
-    sendJson(response, 201, { assignment: { ...assignment, policy: policyById(assignment.policyId) } });
-    return true;
-  }
-  const acknowledgeMatch = pathname.match(/^\/api\/policy\/policies\/(\d+)\/acknowledge$/);
-  if (request.method === "POST" && acknowledgeMatch) {
-    const policy = policyById(acknowledgeMatch[1]);
-    if (!policy || policy.status !== "published") {
-      sendJson(response, 400, { message: "Only published policies can be acknowledged." });
-      return true;
-    }
-    const body = await readJson(request);
-    const user = users.find((entry) => entry.id === Number(body.userId)) || users.find((entry) => entry.username === body.username) || users[0];
-    if (!assignedPoliciesFor(user).some((entry) => entry.policy.id === policy.id)) {
-      sendJson(response, 403, { message: "Policy is not assigned to this user." });
-      return true;
-    }
-    const existing = acknowledgementFor(user.id, policy);
-    if (existing) {
-      sendJson(response, 200, { acknowledgement: existing });
-      return true;
-    }
-    const acknowledgement = {
-      id: nextAcknowledgementId++,
-      policyId: policy.id,
-      policyVersion: policy.version,
-      userId: user.id,
-      statement: String(body.statement || "I have read and understood this policy."),
-      acknowledgedAt: new Date().toISOString()
-    };
-    acknowledgements.push(acknowledgement);
-    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: user.username, action: "POLICY_ACKNOWLEDGED", target: `${policy.title} v${policy.version}`, createdAt: acknowledgement.acknowledgedAt });
-    sendJson(response, 201, { acknowledgement });
-    return true;
-  }
-  if (request.method === "GET" && pathname === "/api/reports") {
-    const type = searchParams.get("type") || "executive";
-    const department = searchParams.get("department") || "All";
-    const titles = { executive: "Executive Compliance Summary", policy: "Policy Acknowledgement Report", training: "Training and Quiz Report", risk: "Employee Risk Review" };
-    sendJson(response, 200, { title: titles[type] || titles.executive, type, department, generatedAt: new Date().toISOString(), rows: reportRows(type, department) });
-    return true;
-  }
-  if (request.method === "GET" && pathname === "/api/reports/export") {
-    const type = searchParams.get("type") || "executive";
-    const department = searchParams.get("department") || "All";
-    response.writeHead(200, { ...securityHeaders("text/csv; charset=utf-8"), "content-disposition": `attachment; filename="secureaware-${type}-report.csv"` });
-    response.end(toCsv(reportRows(type, department)));
-    return true;
-  }
-  if (request.method === "GET" && pathname === "/api/notifications") {
-    sendJson(response, 200, { notifications: notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), unreadCount: notifications.filter((notification) => !notification.read).length, settings: notificationSettings });
-    return true;
-  }
-  if (request.method === "POST" && /^\/api\/notifications\/\d+\/read$/.test(pathname)) {
-    const notification = notifications.find((item) => item.id === Number(pathname.split("/")[3]));
-    if (!notification) {
-      sendJson(response, 404, { message: "Notification not found" });
-      return true;
-    }
-    notification.read = true;
-    sendJson(response, 200, { notification });
-    return true;
-  }
-  if (request.method === "POST" && pathname === "/api/notifications/read-all") {
-    notifications.forEach((notification) => { notification.read = true; });
-    sendJson(response, 200, { ok: true });
-    return true;
-  }
-  if (request.method === "PATCH" && pathname === "/api/notification-settings") {
-    const body = await readJson(request);
-    for (const key of Object.keys(notificationSettings)) if (typeof body[key] === "boolean") notificationSettings[key] = body[key];
-    sendJson(response, 200, { settings: notificationSettings });
-    return true;
-  }
-  if (request.method === "POST" && pathname === "/api/reminders") {
-    const body = await readJson(request);
-    const item = overdueItems.find((entry) => entry.id === Number(body.itemId));
-    if (!item) {
-      sendJson(response, 404, { message: "Compliance item not found" });
-      return true;
-    }
-    const user = users.find((entry) => entry.id === item.userId);
-    item.reminderSent = true;
-    const notification = { id: Math.max(0, ...notifications.map((entry) => entry.id)) + 1, type: "reminder", title: "Reminder sent", message: `${item.title} reminder sent to ${user.name}.`, createdAt: new Date().toISOString(), read: false };
-    notifications = [notification, ...notifications];
-    auditEvents.unshift({ id: Math.max(0, ...auditEvents.map((event) => event.id)) + 1, actor: "compliance.admin", action: "REMINDER_SENT", target: `${item.title} - ${user.name}`, createdAt: new Date().toISOString() });
-    sendJson(response, 201, { notification, item });
-    return true;
-  }
-  if (pathname.startsWith("/api/")) {
-    sendJson(response, 404, { message: "API endpoint not found" });
-    return true;
-  }
-  return false;
+function applySecurityHeaders(response) {
+  response.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("referrer-policy", "no-referrer");
+  response.setHeader("x-frame-options", "DENY");
 }
 
-const server = http.createServer(async (request, response) => {
-  const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
-  try {
-    if (await handleApi(request, response, url)) return;
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      response.writeHead(405, securityHeaders("text/plain; charset=utf-8"));
-      response.end("Method not allowed");
-      return;
-    }
-    serveFile(response, url.pathname);
-  } catch (error) {
-    sendJson(response, 400, { message: error.message || "Request failed" });
-  }
-});
+function parseCookies(request) {
+  return Object.fromEntries((request.headers.cookie || "").split(";").filter(Boolean).map((pair) => {
+    const index = pair.indexOf("=");
+    return [decodeURIComponent(pair.slice(0, index).trim()), decodeURIComponent(pair.slice(index + 1).trim())];
+  }));
+}
+
+function cookie(name, value, options = {}) {
+  const parts = [`${encodeURIComponent(name)}=${encodeURIComponent(value)}`, "Path=/"];
+  if (options.httpOnly) parts.push("HttpOnly");
+  if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
+  if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
+  if (process.env.NODE_ENV === "production") parts.push("Secure");
+  return parts.join("; ");
+}
+
+function token() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+function publicError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  error.publicMessage = message;
+  return error;
+}
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  server.listen(port, "127.0.0.1", () => console.log(`SecureAware running at http://127.0.0.1:${port}`));
+  server.listen(port, "127.0.0.1", () => {
+    console.log(`SecureAware running at http://127.0.0.1:${port}`);
+  });
 }
 
 export default server;

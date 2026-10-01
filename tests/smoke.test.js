@@ -1,159 +1,106 @@
-import test, { after, before } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
-import server from "../server/index.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-let baseUrl;
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "secureaware-main-"));
+process.env.SECUREAWARE_DB = path.join(tempDir, "test.sqlite");
+process.env.SECUREAWARE_DEMO_DATA = "off";
+const { default: server } = await import("../server/index.js");
 
-before(async () => {
+async function withServer(run) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  baseUrl = `http://127.0.0.1:${server.address().port}`;
-});
+  try {
+    await run(`http://127.0.0.1:${server.address().port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
 
-after(async () => {
-  await new Promise((resolve) => server.close(resolve));
-});
+async function login(base, username = "security.admin", password = "AdminPass!2026") {
+  const response = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const cookie = response.headers.get("set-cookie").split(";", 1)[0];
+  return { body, cookie };
+}
 
 test("health endpoint works", async () => {
-  const response = await fetch(`${baseUrl}/api/health`);
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true });
-});
-
-test("dashboard returns proposal-aligned compliance metrics", async () => {
-  const response = await fetch(`${baseUrl}/api/compliance/dashboard?period=30&department=All`);
-  assert.equal(response.status, 200);
-  const data = await response.json();
-  assert.equal(data.summary.employees, 10);
-  assert.ok(data.summary.policyRate > 0);
-  assert.ok(data.summary.trainingRate > 0);
-  assert.ok(data.summary.quizPassRate > 0);
-  assert.equal(data.trend.length, 7);
-  assert.equal(data.departments.length, 5);
-  assert.ok(data.overdue.every((item) => item.user && item.daysOverdue > 0));
-});
-
-test("department scope limits dashboard data", async () => {
-  const response = await fetch(`${baseUrl}/api/compliance/dashboard?department=Development`);
-  const data = await response.json();
-  assert.equal(data.summary.employees, 1);
-  assert.equal(data.departments.length, 1);
-  assert.equal(data.departments[0].name, "Development");
-  assert.ok(data.overdue.every((item) => item.user.department === "Development"));
-});
-
-test("reports support filtered JSON and downloadable CSV", async () => {
-  const reportResponse = await fetch(`${baseUrl}/api/reports?type=policy&department=Marketing`);
-  const report = await reportResponse.json();
-  assert.equal(report.title, "Policy Acknowledgement Report");
-  assert.equal(report.rows.length, 2);
-  assert.ok(report.rows.every((row) => row.department === "Marketing"));
-
-  const csvResponse = await fetch(`${baseUrl}/api/reports/export?type=training&department=All`);
-  assert.match(csvResponse.headers.get("content-type"), /text\/csv/);
-  assert.match(csvResponse.headers.get("content-disposition"), /secureaware-training-report\.csv/);
-  const csv = await csvResponse.text();
-  assert.match(csv, /quizScore/);
-  assert.match(csv, /Nimal Perera/);
-});
-
-test("reminders update compliance state and create an audit-safe notification", async () => {
-  const reminderResponse = await fetch(`${baseUrl}/api/reminders`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ itemId: 1 })
+  await withServer(async (base) => {
+    const response = await fetch(`${base}/api/health`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true });
   });
-  assert.equal(reminderResponse.status, 201);
-  const reminder = await reminderResponse.json();
-  assert.equal(reminder.item.reminderSent, true);
-  assert.equal(reminder.notification.type, "reminder");
-
-  const dashboard = await (await fetch(`${baseUrl}/api/compliance/dashboard`)).json();
-  assert.equal(dashboard.overdue.find((item) => item.id === 1).reminderSent, true);
 });
 
-test("policy module supports versioned creation, assignment and acknowledgement", async () => {
-  const overviewResponse = await fetch(`${baseUrl}/api/policy/overview`);
-  assert.equal(overviewResponse.status, 200);
-  const overview = await overviewResponse.json();
-  assert.ok(overview.summary.policies >= 4);
-  assert.ok(overview.complianceRows.length > 0);
-
-  const createResponse = await fetch(`${baseUrl}/api/policy/policies`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      title: "Data Classification Policy",
-      category: "Data Protection",
-      version: "1.0",
-      status: "draft",
-      summary: "Classify and protect business information.",
-      content: "Employees must classify information before storage or sharing."
-    })
+test("login creates a session and me endpoint returns the user", async () => {
+  await withServer(async (base) => {
+    const auth = await login(base);
+    const me = await fetch(`${base}/api/me`, { headers: { cookie: auth.cookie } });
+    assert.equal(me.status, 200);
+    const body = await me.json();
+    assert.equal(body.user.username, "security.admin");
+    assert.ok(body.csrfToken);
   });
-  assert.equal(createResponse.status, 201);
-  const created = await createResponse.json();
-  assert.equal(created.policy.status, "draft");
-
-  const publishResponse = await fetch(`${baseUrl}/api/policy/policies/${created.policy.id}/publish`, { method: "POST" });
-  assert.equal(publishResponse.status, 200);
-
-  const assignResponse = await fetch(`${baseUrl}/api/policy/assignments`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ policyId: created.policy.id, targetType: "user", targetValue: "isuru.contractor" })
-  });
-  assert.equal(assignResponse.status, 201);
-
-  const ackResponse = await fetch(`${baseUrl}/api/policy/policies/${created.policy.id}/acknowledge`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ userId: 8, statement: "I have read and understood this policy." })
-  });
-  assert.equal(ackResponse.status, 201);
-  const acknowledgement = await ackResponse.json();
-  assert.equal(acknowledgement.acknowledgement.policyVersion, "1.0");
 });
 
-test("learning portal returns training cards and records quiz marks", async () => {
-  const overviewResponse = await fetch(`${baseUrl}/api/learning/overview`);
-  assert.equal(overviewResponse.status, 200);
-  const overview = await overviewResponse.json();
-  assert.equal(overview.modules.length, 3);
-  assert.ok(overview.modules.every((module) => module.lessons.length >= 3));
-  assert.ok(overview.modules.every((module) => module.image.endsWith(".svg")));
-  assert.ok(overview.rows.some((row) => row.status === "complete"));
-
-  const quizResponse = await fetch(`${baseUrl}/api/learning/modules/1/submit`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ userId: 8, answers: [1, 0, 0] })
+test("employee cannot read admin audit log", async () => {
+  await withServer(async (base) => {
+    const auth = await login(base, "employee.demo", "EmployeePass!2026");
+    const response = await fetch(`${base}/api/foundation/audit`, { headers: { cookie: auth.cookie } });
+    assert.equal(response.status, 403);
   });
-  assert.equal(quizResponse.status, 201);
-  const quiz = await quizResponse.json();
-  assert.equal(quiz.attempt.score, 100);
-  assert.equal(quiz.attempt.status, "passed");
 });
 
-test("notification settings and read state are interactive", async () => {
-  const settingsResponse = await fetch(`${baseUrl}/api/notification-settings`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ weeklyDigest: false, overdue: true })
+test("state changing request without csrf is rejected", async () => {
+  await withServer(async (base) => {
+    const auth = await login(base);
+    const response = await fetch(`${base}/api/auth/logout`, { method: "POST", headers: { cookie: auth.cookie } });
+    assert.equal(response.status, 403);
   });
-  const settings = await settingsResponse.json();
-  assert.equal(settings.settings.weeklyDigest, false);
-  assert.equal(settings.settings.overdue, true);
-
-  const readResponse = await fetch(`${baseUrl}/api/notifications/read-all`, { method: "POST" });
-  assert.equal(readResponse.status, 200);
-  const notifications = await (await fetch(`${baseUrl}/api/notifications`)).json();
-  assert.equal(notifications.unreadCount, 0);
 });
 
-test("static responses include defensive security headers", async () => {
-  const response = await fetch(baseUrl);
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
-  assert.equal(response.headers.get("x-frame-options"), "DENY");
-  assert.match(response.headers.get("content-security-policy"), /default-src 'self'/);
+test("password change follows NIST SP 800-63B-4 length and blocklist rules", async () => {
+  await withServer(async (base) => {
+    const auth = await login(base, "consultant.demo", "ConsultantPass!2026");
+    const change = (currentPassword, newPassword) => fetch(`${base}/api/auth/password`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: auth.cookie, "x-csrf-token": auth.body.csrfToken },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    assert.equal((await change("wrong-current-password", "correct horse battery staple")).status, 400);
+    assert.equal((await change("ConsultantPass!2026", "Short!1a")).status, 400);
+    assert.equal((await change("ConsultantPass!2026", "password1234567")).status, 400);
+    // No composition rules: a long lower-case passphrase is accepted.
+    assert.equal((await change("ConsultantPass!2026", "river lantern pepper orbit")).status, 200);
+    await login(base, "consultant.demo", "river lantern pepper orbit");
+  });
+});
+
+test("notifications are scoped to the signed-in user", async () => {
+  await withServer(async (base) => {
+    const auth = await login(base, "employee.demo", "EmployeePass!2026");
+    const response = await fetch(`${base}/api/notifications`, { headers: { cookie: auth.cookie } });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.ok(Array.isArray(body.notifications));
+    const foreign = await fetch(`${base}/api/notifications/999999/read`, { method: "POST", headers: { cookie: auth.cookie, "x-csrf-token": auth.body.csrfToken } });
+    assert.equal(foreign.status, 404);
+  });
+});
+
+test("oversized request bodies are rejected with 413", async () => {
+  await withServer(async (base) => {
+    const response = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "x".repeat(1_100_000) })
+    });
+    assert.equal(response.status, 413);
+  });
 });
