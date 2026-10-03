@@ -2,7 +2,16 @@
 
 Run `npm run build` and `npm test` (Node's built-in `node --test`). Each test file uses its own temporary SQLite database. Demo activity is switched off in tests with `SECUREAWARE_DEMO_DATA=off`.
 
-Latest run on `main` (all modules merged), 2026-10-01: **66 tests, 66 passed, 0 failed** (8 foundation, 26 training, 24 policy, 8 compliance dashboard).
+Latest run on `codex/user-management` (all modules merged), 2026-10-03: **70 tests, 70 passed, 0 failed** (8 foundation, 26 training, 24 policy, 8 compliance dashboard, 4 user management).
+
+## User management (`tests/users.test.js`)
+
+| Requirement | Test evidence | Status |
+| --- | --- | --- |
+| FR-04 role boundary | Ordinary employees are denied; Security/HR Admin manages ordinary accounts but cannot grant administrator roles | Passing |
+| FR-04 privileged administration | System Admin creates and resets a Security/HR Admin account but cannot deactivate itself | Passing |
+| Account lifecycle | Create, edit, deactivate and immediate session revocation | Passing |
+| FR-17 and CSRF | Changes require a CSRF token, are audited and never log passwords | Passing |
 
 ## Foundation (`tests/smoke.test.js`)
 

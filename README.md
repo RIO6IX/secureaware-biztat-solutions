@@ -34,7 +34,7 @@ The service runs the build and test commands before starting. Render supplies `P
 
 ## Educational Use and Readiness
 
-The sign-in screen warns users not to enter real learner or sensitive personal data until the institution approves the privacy, access, retention and hosting arrangements. This prototype does not include in-app account provisioning or institutional identity-provider integration, and it is not certified for regulatory compliance. Obtain the institution's privacy, safeguarding and security review before using real learner data.
+The sign-in screen warns users not to enter real learner or sensitive personal data until the institution approves the privacy, access, retention and hosting arrangements. Administrators can provision local accounts in-app; institutional identity-provider integration is not included, and the prototype is not certified for regulatory compliance. Obtain the institution's privacy, safeguarding and security review before using real learner data.
 
 ## Development Seed Accounts
 
@@ -49,6 +49,10 @@ These fictional accounts are seeded only outside production by default. Producti
 | Department Manager | `manager.consulting` | `ConsultManagerPass!2026` | Consulting |
 | Security/HR Admin | `security.admin` | `AdminPass!2026` | Information Security |
 | System Admin | `system.admin` | `SystemPass!2026` | IT |
+
+## User management
+
+Security/HR Admin and System Admin can open **Administration → User management** to search and filter accounts, create users, edit roles and departments, activate or deactivate access, and reset temporary passwords. Security/HR Admin can manage Employee and Department Manager accounts; only System Admin can manage privileged accounts or assign administrator roles. Access changes revoke the affected user's sessions, self-deactivation and removal of the last System Admin are blocked, and every administrative action is audited.
 
 ## Compliance dashboard (branch `shaeed028`)
 
@@ -128,7 +132,7 @@ Browser (ES modules, hash router, DOM builder - no innerHTML)
 Node HTTP server (server/index.js)
    |  Auth, sessions, CSRF, RBAC, audit, notifications, CSV, password policy
    |  Module discovery: server/modules/<name>/index.js
-Feature modules (server/modules/compliance/, policy/, training/)
+Feature modules (server/modules/compliance/, policy/, training/, users/)
    |
 SQLite (node:sqlite, parameterised statements only)
 ```
