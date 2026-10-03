@@ -32,6 +32,12 @@ The included `render.yaml` configures a free Node web service for an academic de
 
 The service runs the build and test commands before starting. Render supplies `PORT`, and the service binds to `0.0.0.0` in production. Free Render services use an ephemeral filesystem, so SQLite data can reset after a restart, spin-down or redeployment. Production does not seed demo users or sample activity by default. Set `SECUREAWARE_DEMO_DATA=on` only for an isolated demonstration; known seeded passwords are rejected in production when this setting is not enabled. Demo records are seeded again when a new database is created with that opt-in enabled.
 
+## Deploy to Vercel (disposable demo)
+
+`vercel.json` routes every `/api/*` request through one Node Function and enables `SECUREAWARE_IN_MEMORY=on`. The frontend is served from `public/`. This mode deliberately starts from the fictional seed data whenever Vercel creates a cold Function instance. Changes, sessions, new users and progress can reset without warning or differ between concurrently active instances. It is suitable only for a short academic demonstration, never real users or durable evidence. Use an external database before production use.
+
+Deploy through the Vercel Git integration, or run `npx vercel` for a preview and `npx vercel --prod` for production. Select Node.js 22.x in the Vercel project settings.
+
 ## Educational Use and Readiness
 
 The sign-in screen warns users not to enter real learner or sensitive personal data until the institution approves the privacy, access, retention and hosting arrangements. Administrators can provision local accounts in-app; institutional identity-provider integration is not included, and the prototype is not certified for regulatory compliance. Obtain the institution's privacy, safeguarding and security review before using real learner data.

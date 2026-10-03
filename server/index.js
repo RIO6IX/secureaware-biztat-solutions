@@ -8,7 +8,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "public");
 const dataDir = path.join(root, "data");
-const dbPath = process.env.SECUREAWARE_DB || path.join(dataDir, "secureaware.sqlite");
+// Vercel Functions do not provide durable local storage. The explicit in-memory mode is
+// therefore useful only for disposable demonstrations: every cold start begins from seeds.
+const inMemoryDatabase = process.env.SECUREAWARE_IN_MEMORY === "on" || Boolean(process.env.VERCEL);
+const dbPath = process.env.SECUREAWARE_DB || (inMemoryDatabase ? ":memory:" : path.join(dataDir, "secureaware.sqlite"));
 const port = Number(process.env.PORT || 4000);
 const sessionIdleMs = Number(process.env.SESSION_IDLE_MINUTES || 30) * 60 * 1000;
 const bodyLimitBytes = 1_000_000;
@@ -23,7 +26,7 @@ const demoPasswords = new Map([
   ["system.admin", "SystemPass!2026"]
 ]);
 
-fs.mkdirSync(dataDir, { recursive: true });
+if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA foreign_keys = ON");
@@ -123,7 +126,7 @@ function runModuleHook(hook, ...args) {
   }
 }
 
-async function handleRequest(request, response) {
+export async function handleRequest(request, response) {
   applySecurityHeaders(response);
   const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
   if (url.pathname === "/api/health") return sendJson(response, 200, { ok: true });

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "functions": {
+    "api/[...].js": {
+      "includeFiles": "server/modules/**",
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/[...]"
+    }
+  ],
+  "env": {
+    "SECUREAWARE_IN_MEMORY": "on",
+    "SECUREAWARE_DEMO_DATA": "on"
+  }
+}
