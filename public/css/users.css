@@ -1,0 +1,21 @@
+.user-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.user-summary-card { display: grid; gap: var(--space-1); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); border-top: 3px solid var(--primary); }
+.user-summary-card strong { font-size: 1.8rem; line-height: 1; }
+.user-summary-card span { color: var(--text-muted); font-weight: 600; }
+.user-summary-card.success { border-top-color: var(--success); }
+.user-summary-card.info { border-top-color: var(--info); }
+.user-summary-card.muted-card { border-top-color: var(--border-strong); }
+.user-identity { display: grid; gap: 2px; min-width: 150px; }
+.user-status, .user-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.user-actions button { min-height: 34px; padding: 4px 8px; white-space: nowrap; }
+.danger-text { color: var(--danger); }
+.user-filters { margin-bottom: 0; }
+.user-dialog .form-grid { margin-top: var(--space-2); }
+
+@media (max-width: 800px) {
+  .user-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 420px) {
+  .user-summary { grid-template-columns: 1fr; }
+}

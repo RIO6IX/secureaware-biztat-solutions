@@ -9,4 +9,5 @@ All Biztat Solutions specific requirements below are **ASSUMPTION, to be validat
 | UR-03 | ASSUMPTION, to be validated: Employees see only their assigned policy and training work. | FR-08, FR-10, FR-18 |
 | UR-04 | ASSUMPTION, to be validated: Department Managers see compliance for their own department. | FR-14, FR-15 |
 | UR-05 | ASSUMPTION, to be validated: Audit records are retained for login, administration, acknowledgement and assessment events. | FR-17, NFR-07 |
+| UR-06 | Security/HR Admins manage Employee and Department Manager accounts; System Admins manage all accounts and privileged roles. | FR-04, FR-17 |
 

@@ -3,5 +3,6 @@ import { boot } from "./js/core/shell.js";
 import compliance from "./js/compliance/index.js";
 import policy from "./js/policy/index.js";
 import training from "./js/training/index.js";
+import users from "./js/users/index.js";
 
-boot([compliance, policy, training]);
+boot([compliance, policy, training, users]);

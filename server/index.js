@@ -88,7 +88,7 @@ const statements = {
 
 // Feature modules live in server/modules/<name>/index.js and are discovered at startup,
 // so each member branch adds its own folder without editing this file.
-const foundation = { db, audit, hasRole, readJson, sendJson, sendCsv, toCsv, publicError, publicUser, notify, validatePasswordPolicy };
+const foundation = { db, audit, hasRole, readJson, sendJson, sendCsv, toCsv, publicError, publicUser, notify, validatePasswordPolicy, hashPassword };
 const modules = await loadModules();
 
 const server = http.createServer((request, response) => {
