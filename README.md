@@ -5,9 +5,8 @@ SecureAware is an information security policy awareness and compliance managemen
 ## Branches
 
 - `main`: shared secure foundation plus all merged modules (the version to demo and deploy).
-- `sanduni`: Member 2 - Policy Management, Assignment and Acknowledgement.
-- `chanuka`: Member 3 - Security Training, Quiz and Assessment.
-- `shaeed028`: Member 4 - Compliance dashboard and reporting.
+- `chanuka`: Member 2 - Security Training, Quiz and Assessment,Policy Management, Assignment and Acknowledgement.
+- `shaeed028`: Member 3 - Compliance dashboard and reporting.
 
 ## Run
 
